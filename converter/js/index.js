@@ -1,26 +1,35 @@
 // Event handlers
 function registerEventHandlers() {
-
   // Simple listeners
   document.getElementById("customFile").addEventListener("change", fileSelectionHandler);
   document.addEventListener("keydown", keyboardHandler);
-  document.getElementById("interpretation-table-container").addEventListener("click", interpretationTableClickHandler);
-  document.getElementById("specimen-select").addEventListener("change", resetSpecimenHandler);
-  document.getElementById("table-container").addEventListener("click", handleTableClick);
-  document.getElementById("fitting-container-table-tbody").addEventListener("click", handleTableClickComponents);
-  document.getElementById("save-location").addEventListener("click", handleLocationSave);
-  document.getElementById("specimen-age-select").addEventListener("change", handleAgeSelection);
+  //document.getElementById("interpretation-table-container").addEventListener("click", interpretationTableClickHandler);
+  //document.getElementById("specimen-select").addEventListener("change", resetSpecimenHandler);
+  //document.getElementById("table-container").addEventListener("click", handleTableClick);
+  //document.getElementById("fitting-container-table-tbody").addEventListener("click", handleTableClickComponents);
+  //document.getElementById("save-location").addEventListener("click", handleLocationSave);
+  //document.getElementById("specimen-age-select").addEventListener("change", handleAgeSelection);
+  document.getElementById("convert-btn").addEventListener("click", () => {
+    const outputSelect = document.getElementById("output-format-selection");
+    const selectedFuncName = outputSelect.value; // e.g. "convert_UTRECHT"
+
+    if (typeof window[selectedFuncName] === "function") {
+      window[selectedFuncName](); // dynamically call export function
+    } else {
+      alert("Export function not found: " + selectedFuncName);
+    }
+  });
 
   // Redraw on option change
-  document.getElementById("show-ticks").addEventListener("click", function() {
+  /*document.getElementById("show-ticks").addEventListener("click", function() {
     redrawCharts();
-  });
-  document.getElementById("show-labels").addEventListener("click", function() {
+  });*/
+  /*document.getElementById("show-labels").addEventListener("click", function() {
     redrawCharts();
-  });
+  });*/
 
   // Redraw when requested
-  document.getElementById("normalize-intensities").addEventListener("change", plotIntensityDiagram.bind(null, false));
+  //document.getElementById("normalize-intensities").addEventListener("change", plotIntensityDiagram.bind(null, false));
 
   // Radio class listeners
   Array.from(document.getElementsByClassName("demagnetization-type-radio")).forEach(function(x) {
@@ -47,8 +56,10 @@ function registerEventHandlers() {
 
   // Initialize controlled vocab
   addLithologyOptions();
+    console.log("litho options added")
   addGeologicalClassOptions();
-
+  console.log("classoptions added")
+console.log("registerEventHandlers finished");
 }
 
 var Measurement = function(step, coordinates, error) {
@@ -124,8 +135,6 @@ function addDegmagnetizationFiles(format, files) {
       return files.forEach(importAnglia);
     case "OXFORD":
       return files.forEach(importOxford);
-	case "SOUTHAMPTON":
-      return files.forEach(importSouthampton);
     case "RS3":
       return files.forEach(importRS3);
     case "BEIJING":
@@ -936,7 +945,7 @@ function updateSpecimenSelect(index) {
   document.getElementById("specimen-select").selectedIndex = index || 0;
   stepSelector.reset();
   saveLocalStorage();
-
+console.log("registerEventHandlers finished")
 }
 
 function removeOptions(selectbox) {
@@ -977,8 +986,9 @@ function addLithologyOptions() {
    * Loads lithologies from MagIC controlled vocabularies
    */
 
-  HTTPRequest("../db/lithologies.json", "GET", function(lithologies) {
-    addOptions(lithologies, "specimen-lithology-input");
+  HTTPRequest("../db/lithologies.json", "GET", function(lithologies) { 
+  console.log(lithologies)
+	addOptions(lithologies, "specimen-lithology-input");
   });
 
 }
@@ -989,7 +999,7 @@ function addOptions(options, element) {
    * Function addOptions
    * Adds a list of options to a specific option element
    */
-
+console.log(document)
   options.forEach(function(x) {
 
     var option = document.createElement("option");
@@ -1384,7 +1394,7 @@ function persistFork() {
 }
 
 function __unlock__(json) {
-
+console.log("unlock called")
   /*
    * Function __unlock__
    * Application has initialized and handlers can be registered
@@ -1412,13 +1422,15 @@ function __unlock__(json) {
   }
 
   specimens = json;
-
+console.log("specimens filled called")
   registerEventHandlers();
+  console.log("register evenhandled in unlock finished")
   updateSpecimenSelect();
-  stepSelector.reset();
+  console.log("update specimenselector in unlock finished")
+  //stepSelector.reset();
 
-  addMap();
-  
+  //addMap();
+  console.log("unlock finished")
 } 
 
 // Some globals
@@ -1722,125 +1734,6 @@ function mapClickHandler(event) {
 
 }
 
-var StepSelector = function() {
-
-  /*
-   * Class StepSelector
-   * Manages the navigation, visibility, and selection of steps
-   */
-
-  // Initialize
-  this.reset();
-
-  this._container.addEventListener("click", function(event) {
-    if(event.target.nodeName === "TR") {
-      this.setActiveStep(Number(event.target.value));
-    }
-  }.bind(this));
-
-}
-
-StepSelector.prototype.setActiveStep = function(index) {
-
-  /*
-   * Function StepSelector.setActiveStep
-   * Sets the active step to a particular index
-   */
-
-  this._selectedStep = index;
-  this.render(true);
-
-}
-
-StepSelector.prototype._container = document.getElementById("step-container");
-
-StepSelector.prototype.reset = function() {
-
-  /*
-   * Function StepSelector.reset
-   * Resets the step selector for a new specimen
-   */
-
-  this._selectedStep = 0;
-  this.render(false);
-
-}
-
-StepSelector.prototype.clear = function() {
-
-  /*
-   * Function StepSelector.clear
-   * Clears the HTML of the container
-   */
-
-  this._container.innerHTML = "";
-
-}
-
-StepSelector.prototype.render = function(hover) {
-
-  /*
-   * Function StepSelector.render
-   * Renders the stepSelector component with the current steps and properties
-   */
-
-  const HIDDEN_STEP_SYMBOL = "…";
-
-  this.clear();
-
-  var specimen = getSelectedSpecimen();
-
-  if(specimen === null) {
-    return;
-  }
-
-  // Select the appropriate radio button for this demagnetization type
-  if(specimen.demagnetizationType === "thermal") {
-    $("#option1").parent().button("toggle");
-  } else if(specimen.demagnetizationType === "alternating") {
-    $("#option2").parent().button("toggle");
-  } else {
-    $("#option3").parent().button("toggle");
-  }
-
-  var listSteps = document.createElement("tbody");
-
-  // Add each steps
-  specimen.steps.forEach(function(step, i) {
-
-    var listStep = document.createElement("tr");
-    listStep.value = i;
-
-    // Attach some extra classes
-    if(step.selected) {
-      listStep.className = "selected";
-    }
-
-    // Highlight the current step
-    if(this._selectedStep === i) {
-      listStep.className += " current";
-    }
-
-    // Steps may be hidden
-    if(step.visible) {
-      listStep.appendChild(document.createTextNode(step.step));
-    } else {
-      listStep.appendChild(document.createTextNode(HIDDEN_STEP_SYMBOL));
-      listStep.className += " text-muted";
-    }
-
-    listSteps.appendChild(listStep);
-
-  }, this);
-
-  // Add to the DOM
-  this._container.appendChild(listSteps);
-
-  // Update the charts
-  redrawCharts(hover);
-
-}
-
 function formatStepTable() {
 
   /*
@@ -1901,97 +1794,6 @@ function formatStepTable() {
     "    </tr>",
     "  </tbody>"
   ].join("\n");
-
-}
-
-StepSelector.prototype.hideStep = function() {
-
-  /*
-   * Function StepSelector.hideStep
-   * Hides the currently active step if not selected
-   */
-
-  var step = this.getCurrentStep();
-
-  // Must not be selected
-  if(!step.selected) {
-    step.visible = !step.visible;
-  }
-
-  // Practical to move to the next step
-  this.handleStepScroll(1);
-
-  this.render(false);
-
-  saveLocalStorage();
-
-}
-
-StepSelector.prototype.getCurrentStep = function() {
-
-  /*
-   * Function StepSelector.getCurrentStep
-   * Returns the currently selected step from the step selector
-   */
-
-  return getSelectedSpecimen().steps[this._selectedStep];
-
-}
-
-
-StepSelector.prototype.selectStep = function() {
-
-  /*
-   * Function StepSelector.selectStep
-   * Selects the currently active step if not hidden
-   */
-
-  var step = this.getCurrentStep();
-
-  // Toggle select if the step is visible
-  if(step.visible) {
-    step.selected = !step.selected;
-  }
-
-  // Practical to move to the next step
-  this.handleStepScroll(1);
-
-  saveLocalStorage();
-
-}
-
-StepSelector.prototype.handleStepScroll = function(direction) {
-
-  /*
-   * Function StepSelector.handleStepScroll
-   * Handles increment/decrement of the selected step
-   */
-
-  var steps = this._container.getElementsByTagName("tr");
-
-  // There are no steps
-  if(steps.length === 0) {
-    return;
-  }
-
-  // Handle the scrolling logic
-  this._selectedStep = this._selectedStep + direction;
-
-  // Negative roll-over
-  if(this._selectedStep === -1) {
-    this._selectedStep = steps.length - 1;
-  }
-
-  // Positive roll-over
-  this._selectedStep = this._selectedStep % steps.length;
-
-  this.render(true);
-
-  if(this._selectedStep > 15) {
-    this._container.parentElement.scrollTop = (this._selectedStep - 15) * 24;
-  } else {
-    this._container.parentElement.scrollTop = 0;
-  }
 
 }
 
@@ -2538,13 +2340,14 @@ function exportApplicationSave() {
 
 }
 
-function __init__() {
 
+
+function __init__() {
   /*
    * Function __init__
    * Initializes the Paleomagnetism 2.0.0 interpretation portal
    */
-
+console.log("init called");
   // Check local storage
   if(!window.localStorage) {
     return notify("warning", "Local storage is not supported by your browser. Save your work manually by exporting your data.");
@@ -2566,6 +2369,8 @@ function __init__() {
 }
 
 // Components
-var stepSelector = new StepSelector();
-
+//var stepSelector = new StepSelector();
+console.log("index innit called");
 __init__();
+
+console.log("all done in a jiffy");
