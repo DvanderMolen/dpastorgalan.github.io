@@ -135,6 +135,8 @@ function addDegmagnetizationFiles(format, files) {
       return files.forEach(importAnglia);
     case "OXFORD":
       return files.forEach(importOxford);
+    case "SOUTHAMPTON":
+      return files.forEach(importSouthampton);
     case "RS3":
       return files.forEach(importRS3);
     case "BEIJING":

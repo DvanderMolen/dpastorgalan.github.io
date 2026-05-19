@@ -1,6 +1,91 @@
 // Global variable for converter specimens
 var specimens = [];
 
+function xyzToDirectionFromStep(step) {
+  const x = Number(step.x);
+  const y = Number(step.y);
+  const z = Number(step.z);
+
+  const intensity = Math.sqrt(x*x + y*y + z*z);
+
+  if (intensity === 0) {
+    return { dec: 0, inc: 0, intensity: 0 };
+  }
+
+  let dec = Math.atan2(x, y) * 180.0 / Math.PI;
+  if (dec < 0) dec += 360;
+
+  let inc = Math.atan2(z, Math.sqrt(x*x + y*y)) * 180.0 / Math.PI;
+
+  return {
+    dec: dec,
+    inc: inc,
+    intensity: intensity
+  };
+}
+
+function stepToCoordinates(step) {
+  return new Coordinates(Number(step.x) || 0, Number(step.y) || 0, Number(step.z) || 0);
+}
+
+function stepToDirection(step) {
+  return stepToCoordinates(step).toVector(Direction);
+}
+
+function normalizeDec(dec) {
+  var value = Number(dec) || 0;
+  if (value < 0) {
+    value += 360;
+  }
+  return value % 360;
+}
+
+function safeFileBase(specimen, index) {
+  const baseName = (specimen.name || specimen.sample || `specimen_${sIndex + 1}`);
+  const safeBase = baseName.replace(/[^a-z0-9_\-]/gi, "_");
+  //const base = (specimen.originalFile || specimen.sample || specimen.name || ("specimen_" + (index + 1))).toString();
+  return safeBase;
+}
+
+function downloadTextFile(content, filename) {
+  const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function downloadPerSpecimenText(specimensList, extension, suffix, buildContent) {
+  const multiple = specimensList.length > 1;
+  if (!multiple) {
+    const only = specimensList[0];
+    const base = safeFileBase(only, 0);
+    downloadTextFile(buildContent(only, 0), base + suffix + extension);
+    return;
+  }
+
+  const zip = new JSZip();
+  specimensList.forEach(function(specimen, index) {
+    const base = safeFileBase(specimen, index);
+    zip.file(base + suffix + extension, buildContent(specimen, index));
+  });
+
+  zip.generateAsync({ type: "blob" }).then(function(blob) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = extension.replace(/^\./, "") + "_export.zip";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  });
+}
+
 // Returns a Promise<string> with the hex SHA-256 of `message`
 function sha256Hex(message) {
   if (!window.crypto || !crypto.subtle) {
@@ -13,7 +98,6 @@ function sha256Hex(message) {
     return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
   });
 }
-
 
 function convert_UTRECHT() {
   console.log("Export Utrecht function called.");
@@ -51,7 +135,7 @@ function convert_UTRECHT() {
   a.href = url;
   
   let exportName = specimens[0].originalFile || "converted_specimens.th";
-  a.download = exportName.replace(/\.[^/.]+$/, "") + "_converted.th";
+  a.download = exportName.replace(/\.[^/.]+$/, "") + "_converted_to_utrecht.th";
   document.body.appendChild(a);
   a.click();
 
@@ -62,15 +146,17 @@ function convert_UTRECHT() {
 
 function convert_HELSINKI() {
   console.log("Export Helsinki function called.");
-
+  console.warn(
+    "Helsinki format does not store orientation metadata. " +
+    "bedding orientations will be lost."
+  );
   if (specimens.length === 0) {
     alert("No specimens to export.");
     return;
   }
 
-  let content = "";
-
-  specimens.forEach(function(specimen) {
+  downloadPerSpecimenText(specimens, ".csv", "_converted_to_helsinki", function(specimen) {
+    let content = "";
     const { sample, volume, coreAzimuth, coreDip, demagnetizationType, steps } = specimen;
 
     // ---- Header (first 12 lines, mostly placeholders except a few fields) ----
@@ -107,22 +193,8 @@ function convert_HELSINKI() {
 
       content += fields.join(";") + "\n";
     });
+    return content;
   });
-
-  // Create a blob and download
-  const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  console.log(specimens.originalFile)
-  let exportName = specimens[0].originalFile || "converted_specimens.csv";
-  a.download = exportName.replace(/\.[^/.]+$/, "") + "_converted.csv";
-  document.body.appendChild(a);
-  a.click();
-
-  // Clean up
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
 }
 
 function convert_HELSINKIBLOCK() {
@@ -133,9 +205,8 @@ function convert_HELSINKIBLOCK() {
     return;
   }
 
-  let content = "";
-
-  specimens.forEach(function(specimen) {
+  downloadPerSpecimenText(specimens, ".csv", "_converted_to_helsinki_block", function(specimen) {
+    let content = "";
     const { sample, volume, coreAzimuth, coreDip, demagnetizationType, steps } = specimen;
 
     // Reverse transform azimuth back to strike
@@ -144,9 +215,7 @@ function convert_HELSINKIBLOCK() {
     // Reverse transform dip convention
     const dip = 90 - Number(coreDip);
 
-    // Header block — we need at least 12 lines (the import skips 12)
-    // You can expand with the real Helsinki header template if you have it,
-    // but here’s a skeleton version to make it compatible with your importer:
+    // Header block — need at least 12 lines 
     content += ";\n".repeat(5); // filler lines 0-4
     content += `;${sample};;;;;;${strike}\n`; // line 5 (sample + strike)
     content += `;;;;;;;${dip}\n`;              // line 6 (dip)
@@ -157,7 +226,7 @@ function convert_HELSINKIBLOCK() {
     steps.forEach(function(step) {
       // Reverse conversion (back to mA/m, so divide by 1E3)
       const y = step.y / 1E3;
-      const x = -step.x / 1E3;
+      const x = step.x / 1E3;
       const z = step.z / 1E3;
 
       // Use semicolon-separated fields (24 columns needed)
@@ -168,40 +237,35 @@ function convert_HELSINKIBLOCK() {
       cols[5] = "0";   // dec (not recovered from import, so placeholder)
       cols[6] = "0";   // inc (not recovered, placeholder)
       cols[13] = y;
-      cols[14] = -x;   // undo the negation done in import
+      cols[14] = -x;
       cols[15] = z;
 
       content += cols.join(";") + "\n";
     });
+    return content;
   });
-
-  // Create a blob and download
-  const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  let exportName = specimens[0].originalFile || "converted_specimens.csv";
-  a.download = exportName.replace(/\.[^/.]+$/, "") + "_converted.csv";
-  document.body.appendChild(a);
-  a.click();
-
-  // Clean up
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
 }
 
 function convertAgicoInverse(coreAzimuth, coreDip, beddingStrike, beddingDip) {
-  /*
-   * Converts paleomagnetism.org orientation parameters back to AGICO RS3 P1..P4.
-   * Only supports the same limited set as convertAgico.
-   */
 
-  let P1 = 12;
-  let P3 = 12;
-  let P2 = 90; // export in "direct dip" mode
-  let P4 = 90; // export bedding strike in RHR convention
+  const P1 = 12;
+  const P2 = 0;
+  const P3 = 12;
+  const P4 = 90;
 
-  return { P1, P2, P3, P4 };
+  const exportCoreDip = 90 - coreDip;
+  const exportBeddingStrike = beddingStrike;
+
+  return {
+    P1,
+    P2,
+    P3,
+    P4,
+    coreAzimuth,
+    coreDip: exportCoreDip,
+    beddingStrike: exportBeddingStrike,
+    beddingDip
+  };
 }
 
 function convert_RS3() {
@@ -212,111 +276,148 @@ function convert_RS3() {
     return;
   }
 
-  // Helpers
-  function getXYZ(step) {
-    if (!step) return null;
-    if (step.coordinates && typeof step.coordinates.x === "number") {
-      return step.coordinates;
-    }
-    if (typeof step.x === "number") {
-      return { x: step.x, y: step.y, z: step.z };
-    }
-    return null;
-  }
-  function setField(charArr, start, width, value, alignRight = true) {
-    let s = value === null || value === undefined ? "" : String(value);
-    if (s.length > width) s = s.slice(0, width);
-    s = alignRight ? s.padStart(width, " ") : s.padEnd(width, " ");
-    for (let i = 0; i < width; i++) {
-      charArr[start + i] = s[i];
-    }
-  }
+  const multiple = specimens.length > 1;
+  const zip = multiple ? new JSZip() : null;
 
-  let content = "";
-  content += " ".repeat(120) + "\n";  //adds top header
   specimens.forEach(function(specimen, sIndex) {
-    const sample = (specimen.sample || specimen.name || `S${sIndex}`).toString().slice(0, 8);
-    const demag = specimen.demagnetizationType === "thermal" ? "C" : "A";
-    const latitude = (typeof specimen.latitude === "number") ? specimen.latitude : null;
-    const longitude = (typeof specimen.longitude === "number") ? specimen.longitude : null;
-    const coreAzimuth = Number(specimen.coreAzimuth) || 0;
-    const coreDip = Number(specimen.coreDip) || 0;
-    const beddingStrike = Number(specimen.beddingStrike) || 0;
-    const beddingDip = Number(specimen.beddingDip) || 0;
+
+    const sample = (specimen.sample || specimen.name || `S${sIndex}`)
+      .toString()
+      .substring(0, 8);
+
+    const latitude  = specimen.latitude  != null ? specimen.latitude  : 0;
+    const longitude = specimen.longitude != null ? specimen.longitude : 0;
+
+    const internalCoreAzimuth   = Number(specimen.coreAzimuth)   || 0;
+    const internalCoreDip       = Number(specimen.coreDip)       || 0;
+    const internalBeddingStrike = Number(specimen.beddingStrike) || 0;
+    const internalBeddingDip    = Number(specimen.beddingDip)    || 0;
+
+    const agico = convertAgicoInverse(
+      internalCoreAzimuth,
+      internalCoreDip,
+      internalBeddingStrike,
+      internalBeddingDip
+    );
+
+
     const steps = Array.isArray(specimen.steps) ? specimen.steps : [];
-	console.log(coreAzimuth,coreDip,beddingStrike,beddingDip)
-    const agicoParams = convertAgicoInverse(coreAzimuth, coreDip, beddingStrike, beddingDip);
 
-    // Build header line (fixed columns)
-    let header = "";
-    header += sample.padEnd(8, " ");          
-    header += " ".repeat(13);                 
-    header += (latitude !== null ? latitude.toFixed(2).padStart(4, " ") : "    "); 
-    header += " ".repeat(6);                  
-    header += (longitude !== null ? longitude.toFixed(2).padStart(4, " ") : "    "); 
-    header += " ".repeat(39);                 
-    header += String(coreAzimuth).padStart(3, " "); 
-    header += " ".repeat(2);                  
-    header += String(coreDip).padStart(3, " ");    
-    header += " ".repeat(4);                  
-    header += String(beddingStrike).padStart(4, " "); 
-    header += " ".repeat(2);                  
-    header += String(beddingDip).padStart(3, " ");    
-    header += " ".repeat(15);                 
-    header += String(agicoParams.P1).padStart(2, " "); 
-    header += String(agicoParams.P2).padStart(3, " "); 
-    header += String(agicoParams.P3).padStart(3, " "); 
-    header += String(agicoParams.P4).padStart(3, " "); 
-    header += "\n";
+    // Supported AGICO parameter set
+    const P1 = 12;
+    const P2 = 0;
+    const P3 = 12;
+    const P4 = 90;
 
-    content += header;
+    let content = "";
 
-    // second line: demag char
-    let secondLineArr = new Array(12).fill(" ");
-    setField(secondLineArr, 4, 1, demag, true);
-    content += secondLineArr.join("") + "\n";
+    // ---------------- HEADER LINE ----------------
+    // We build a 122-character fixed-width header to satisfy import slices
+	  content += " ".repeat(120) + "\n";  //adds top header
+    let header = Array(130).fill(" ");
 
-    // step lines
+    function writeAt(str, start) {
+      for (let i = 0; i < str.length; i++) {
+        header[start + i] = str[i];
+      }
+    }
+
+    writeAt(sample.padEnd(8, " "), 0);                // 0–7 sample name
+    writeAt(String(latitude).padStart(4, " "), 21);  // 21–24 latitude
+    writeAt(String(longitude).padStart(4, " "), 31); // 31–34 longitude
+    writeAt(String(agico.coreAzimuth).padStart(3, " "), 74);
+    writeAt(String(agico.coreDip).padStart(3, " "), 79);
+    writeAt(String(agico.beddingStrike).padStart(4, " "), 86);
+    writeAt(String(agico.beddingDip).padStart(3, " "), 92);
+
+    writeAt(String(agico.P1).padStart(2, " "), 110);
+    writeAt(String(agico.P2).padStart(2, " "), 113);
+    writeAt(String(agico.P3).padStart(2, " "), 116);
+    writeAt(String(agico.P4).padStart(2, " "), 119);
+
+
+    content += header.join("") + "\n";
+
+    // ---------------- DEMAG LINE ----------------
+    let demagLine = Array(20).fill(" ");
+
+    const isThermal = specimen.demagnetizationType === "thermal";
+    const demagText = isThermal ? "C" : "AF";
+
+    for (let i = 0; i < demagText.length; i++) {
+      demagLine[4 + i] = demagText[i];  // slice(4,11) used in import
+    }
+
+    content += demagLine.join("") + "\n";
+
+    // ---------------- STEPS ----------------
     steps.forEach(function(stepObj, idx) {
-      const lineArr = new Array(120).fill(" ");
-      const stepNum = (stepObj && (stepObj.step !== undefined ? stepObj.step : (idx + 1)));
 
-      setField(lineArr, 3, 3, stepNum, true);
+      const stepNum = stepObj.step !== undefined ? stepObj.step : (idx + 1);
 
-      const xyz = getXYZ(stepObj) || { x: 0, y: 0, z: 0 };
-      const { x, y, z } = xyz;
-      const magnitude = Math.sqrt(x*x + y*y + z*z) || 0;
-      const intensityFieldValue = magnitude / 1e6;
+      // Convert Cartesian → Direction
+      const coords = new Coordinates(stepObj.x, stepObj.y, stepObj.z);
+      const dir = coords.toVector(Direction);
 
-      setField(lineArr, 15, 12, intensityFieldValue.toFixed(6), true);
+      const intensity = dir.length / 1E6;  // back to A/m
+      const declination = dir.dec;
+      const inclination = dir.inc;
+      const a95 = stepObj.error || 0;
 
-      let decl = (Math.atan2(x, y) * 180.0 / Math.PI);
-      if (decl < 0) decl += 360;
-      let incl = (Math.atan2(z, Math.sqrt(x*x + y*y)) * 180.0 / Math.PI);
+      let line = Array(120).fill(" ");
 
-      setField(lineArr, 28, 5, decl.toFixed(1), true);
-      setField(lineArr, 34, 5, incl.toFixed(1), true);
+      function writeStep(str, start) {
+        for (let i = 0; i < str.length; i++) {
+          line[start + i] = str[i];
+        }
+      }
+	    const stepStr = String(Math.round(Number(stepNum)));  // convert step whole number, else it won't fit in the character box
+      writeStep(stepStr.padStart(3, " "), 3);		       // 3–5
+      writeStep(intensity.toExponential(6), 15);             // 15–27
+      writeStep(declination.toFixed(1).padStart(5, " "), 28); // 28–32
+      writeStep(inclination.toFixed(1).padStart(5, " "), 34); // 34–38
+      writeStep(String(a95).padStart(3, " "), 77);            // 77–79
 
-      const a95 = (stepObj && stepObj.error !== undefined) ? stepObj.error : 0;
-      setField(lineArr, 77, 3, Math.round(a95), true);
-
-      content += lineArr.join("") + "\n";
+      content += line.join("") + "\n";
     });
+
+    // ---------------- EXPORT ----------------
+
+    const baseName = (specimen.name || specimen.sample || `specimen_${sIndex + 1}`);
+    const safeBase = baseName.replace(/[^a-z0-9_\-]/gi, "_");
+
+    if (multiple) {
+      zip.file(safeBase + "converted_to_rs3.rs3", content);
+    } else {
+      const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = safeBase + "converted_to_rs3.rs3";
+
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }
+
   });
 
-  const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  let exportName = specimens[0].originalFile || "converted_specimens.csv";
-  a.download = exportName.replace(/\.[^/.]+$/, "") + "_converted.rs3";
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+  // ---------------- ZIP DOWNLOAD ----------------
+  if (multiple) {
+    zip.generateAsync({ type: "blob" }).then(function(blob) {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "rs3_export.zip";
+
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    });
+  }
 }
-
-
 
 function convert_CALTECH() {
   console.log("Export Caltech function called.");
@@ -326,9 +427,8 @@ function convert_CALTECH() {
     return;
   }
 
-  let content = "";
-
-  specimens.forEach(function(specimen) {
+  downloadPerSpecimenText(specimens, ".txt", "_converted_to_caltech", function(specimen) {
+    let content = "";
     const { sample, volume, beddingStrike, beddingDip, coreAzimuth, coreDip, steps } = specimen;
 
     // First line: sample name
@@ -354,51 +454,48 @@ function convert_CALTECH() {
     steps.forEach(function(step) {
       // We have Cartesian specimen coords in µA/m.
       // Convert back to Direction (dec/inc, intensity).
-      const dir = step.coordinates.toVector(Direction);
+      const dir = stepToDirection(step);
 
-      const intensity = (dir.intensity / 1e9).toExponential(3).padStart(9, " "); // back to emu/cm^3
+      const intensity = (dir.length / 1e9).toExponential(3).padStart(8, " "); // back to emu/cm^3
       const a95 = step.error ? step.error.toString().padStart(5, " ") : "     ";
       const dec = dir.dec.toFixed(1).padStart(5, " ");
       const inc = dir.inc.toFixed(1).padStart(5, " ");
 
       // Placeholders for GDec/GInc and TDec/TInc
-      const GDec = " 0.0".padStart(5, " ");
-      const GInc = " 0.0".padStart(5, " ");
-      const TDec = " 0.0".padStart(5, " ");
-      const TInc = " 0.0".padStart(5, " ");
+      const GDec = "0.0".padStart(5, " ");
+      const GInc = "0.0".padStart(5, " ");
+      const TDec = "0.0".padStart(5, " ");
+      const TInc = "0.0".padStart(5, " ");
 
       // Step label
       const stepLabel = step.step.toString().padStart(6, " ");
 
-      // Build line (fixed-column style as Caltech expects)
+      // Build line with proper column spacing (import expects specific slice positions)
+      // Positions: 0-5: step, 6: space, 7-11: GDec, 12: space, 13-17: GInc, etc.
       const line =
-        stepLabel +        // 0–6 chars
-        GDec +             // 7–12
-        GInc +             // 13–18
-        TDec +             // 19–24
-        TInc +             // 25–30
-        intensity +        // 31–39
-        a95 +              // 40–45
-        dec +              // 46–51
-        inc +              // 52–57
+        stepLabel +        // 0–5
+        " " +              // 6
+        GDec +             // 7–11
+        " " +              // 12
+        GInc +             // 13–17
+        " " +              // 18
+        TDec +             // 19–23
+        " " +              // 24
+        TInc +             // 25–29
+        " " +              // 30
+        intensity +        // 31–38
+        " " +              // 39
+        a95 +              // 40–44
+        " " +              // 45
+        dec +              // 46–50
+        " " +              // 51
+        inc +              // 52–56
         " ".repeat(28) +   // pad until 85
         "INFO";            // placeholder metadata (85–113)
       content += line + "\n";
     });
+    return content;
   });
-
-  // Create a blob and download
-  const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = "converted_specimens.caltech";
-  document.body.appendChild(a);
-  a.click();
-
-  // Clean up
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
 }
 
 function convert_LDGO() {
@@ -420,11 +517,11 @@ function convert_LDGO() {
 
     steps.forEach(function(step) {
       // Convert cartesian coords back to direction (dec, inc, intensity)
-      const dir = new Coordinates(step.x, step.y, step.z).toDirection();
+      const dir = stepToDirection(step);
 
       const dec = dir.dec;
       const inc = dir.inc;
-      const intensity = dir.intensity / 1E6; // convert uA/m back to A/m
+      const intensity = dir.length / 1E6; // convert uA/m back to A/m
 
       content += `${sample}\t${step.step}\t${dec}\t${inc}\t${intensity}\t${coreAzimuth}\t${hade}\t${ldgoStrike}\t${beddingDip}\t${volume}\n`;
     });
@@ -435,7 +532,9 @@ function convert_LDGO() {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = "converted_specimens.ldgo";
+  
+  let exportName = specimens[0].originalFile || "converted_specimens.txt";
+  a.download = exportName.replace(/\.[^/.]+$/, "") + "_converted_to_LDGO.txt";
   document.body.appendChild(a);
   a.click();
 
@@ -445,92 +544,45 @@ function convert_LDGO() {
 }
 
 function convert_BCN2G() {
-  console.log("Export BCN2G function called.");
+  console.log("Export BCN2G function called wawoop.");
 
   if (specimens.length === 0) {
     alert("No specimens to export.");
     return;
   }
 
-  let content = "";
-
-  specimens.forEach(function(specimen) {
+  downloadPerSpecimenText(specimens, ".dat", "_converted_to_bcn2g", function(specimen) {
     const { sample, volume, beddingStrike, beddingDip, coreAzimuth, coreDip, steps } = specimen;
+    let content = "";
 
-    // --- Header block ---
-    // BCN2G expects \u0002 at start
-    content += "\u0002";
+    const sampleName = (sample || "").padEnd(7, "\0").slice(0, 7);
+    const volStr = String(Math.round(Number(volume) || 10)).padStart(2, "0");//volume needs to to fit in slice(14, 16))
+    const coreAzStr = String(Math.round(Number(coreAzimuth) || 0)).padStart(3, "0");
+    const coreDipStr = String(Math.round(Number(coreDip) || 0)).padStart(2, "0");
+    const bedStrikeStr = String(Math.round(((Number(beddingStrike) || 0) + 90) % 360)).padStart(3, "0");
+    const bedDipStr = String(Math.round(Number(beddingDip) || 0)).padStart(2, "0");
 
-    // Pad sample name to 7 chars
-    let sampleName = (sample || "").padEnd(7, "\0").slice(0, 7);
+    // BCN2G importer expects a nested STX/ETX block structure.
+    // We add two leading delimiter-separated blocks before the actual header,
+    // then put each step in its own STX-delimited block.
+    let header = "#####".padEnd(5, "\0") + sampleName + "\0\0" + volStr + "\0".repeat(85);
+    header += coreAzStr + "\0" + "\0" + coreDipStr + "\0\0" + bedStrikeStr + "\0\0" + bedDipStr + "\0\0" + "\0" + "\0".repeat(12) + "0000";
 
-    // Pad numeric fields to correct widths
-    let volStr = String(volume).padEnd(2, "\0").slice(0, 2);
-    let coreAzStr = String(coreAzimuth).padEnd(3, "\0").slice(0, 3);
-    let coreDipStr = String(coreDip).padEnd(2, "\0").slice(0, 2);
-    let bedStrikeStr = String((beddingStrike + 90) % 360).padEnd(3, "\0").slice(0, 3); // reverse transform
-    let bedDipStr = String(beddingDip).padEnd(2, "\0").slice(0, 2);
+    content += "\u0002\u0000\u0000\u0002\u0000\u0002" + header;
 
-    // Stubbed declination correction and overturn bit (for now)
-    let declStr = "0000";
-    let overturnBit = "\0";
-
-    // Build header line (positions approximate, you may need to tune to exact spec)
-    let header =
-      "#####".padEnd(5, "\0") + // dummy prefix
-      sampleName +
-      "\0".repeat(2) +
-      volStr +
-      "\0".repeat(85) +
-      coreAzStr +
-      "\0" +
-      coreDipStr +
-      "\0" +
-      bedStrikeStr +
-      "\0" +
-      bedDipStr +
-      overturnBit +
-      "\0".repeat(12) +
-      declStr;
-
-    content += header;
-
-    // --- Steps ---
-    steps.forEach(function(step) {
-      // Convert cartesian to direction
-      let dir = new Direction().fromCartesian(step.x, step.y, step.z);
-
-      let stepStr = [
-        "", // filler
-        "", // filler
-        "", // filler
-        step.step,
-        dir.dec.toFixed(2),
-        dir.inc.toFixed(2),
-        "", "", "", "", "",
-        (step.intensity / 1e9).toExponential(6), // back to emu/cm^3
-        "", "", "", "", "", "", "", "", "", "", "", "", ""
-      ].join("\0");
-
-      content += stepStr + "\u0000";
+    (steps || []).forEach(function(step) {
+      const dir = stepToDirection(step);
+      const fields = new Array(26).fill("0");
+      fields[3] = String(step.step);
+      fields[4] = dir.dec.toFixed(2);
+      fields[5] = dir.inc.toFixed(2);
+      fields[11] = (dir.length / 1e9).toExponential(6);
+      content += "\u0002" + fields.join("\u0000");
     });
 
-    // Close specimen with \u0003
     content += "\u0003";
+    return content;
   });
-
-  // Create blob and download
-  const blob = new Blob([content], { type: "application/octet-stream" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = "converted_specimens.bcn2g";
-  document.body.appendChild(a);
-  a.click();
-
-  // Clean up
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
 }
 
 function convert_MUNICH() {
@@ -541,9 +593,8 @@ function convert_MUNICH() {
     return;
   }
 
-  let content = "";
-
-  specimens.forEach(function(specimen) {
+  downloadPerSpecimenText(specimens, ".dat", "_converted_to_munich", function(specimen) {
+    let content = "";
     const { sample, coreAzimuth, coreDip, beddingStrike, beddingDip, steps } = specimen;
 
     // Convert back hade angle and bedding strike
@@ -556,25 +607,13 @@ function convert_MUNICH() {
     // Steps
     steps.forEach(function(step) {
       // Convert back to Direction (dec/inc/intensity)
-      const dir = step.coordinates.toDirection();
-      const intensity_mA = dir.intensity / 1000.0; // back to mA
+      const dir = stepToDirection(step);
+      const intensity_mA = dir.length / 1000.0; // back to mA
 
       content += `${step.step}, ${intensity_mA}, ${step.error}, ${dir.dec}, ${dir.inc}\n`;
     });
+    return content;
   });
-
-  // Create a blob and download
-  const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = "converted_specimens.munich";
-  document.body.appendChild(a);
-  a.click();
-
-  // Clean up
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
 }
 
 function convert_CENIEHREGULAR() {
@@ -585,9 +624,8 @@ function convert_CENIEHREGULAR() {
     return;
   }
 
-  let content = "";
-
-  specimens.forEach(function(specimen, i) {
+  downloadPerSpecimenText(specimens, ".dat", "_converted_to_ceniehregular", function(specimen) {
+    let content = "";
     const { sample, steps, coreAzimuth, coreDip, beddingStrike, beddingDip, demagnetizationType } = specimen;
 
     // Header: file format expects "SampleName <tab> AF/TH ..."
@@ -597,7 +635,7 @@ function convert_CENIEHREGULAR() {
     steps.forEach(function(step) {
       // Cartesian coords back to Direction
       const dir = new Coordinates(step.x, step.y, step.z).toVector(Direction);
-      let intensity = dir.r * 1E-9; // back to emu/cc
+      let intensity = dir.length * 1E-9; // back to emu/cc
       let dec = dir.dec;
       let inc = dir.inc;
 
@@ -628,23 +666,8 @@ function convert_CENIEHREGULAR() {
       ].join("\t") + "\n";
     });
 
-    // Add blank line between specimens if multiple
-    if (i < specimens.length - 1) {
-      content += "\n";
-    }
+    return content;
   });
-
-  // Create a blob and download
-  const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = "converted_specimens.cenieh";
-  document.body.appendChild(a);
-  a.click();
-
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
 }
 
 function convert_CENIEH() {
@@ -655,20 +678,17 @@ function convert_CENIEH() {
     return;
   }
 
-  let content = "";
-
-  // Write a header (CENIEH files always start with one)
-  content += "SAMPLE STEP INTENSITY DEC INC .... LEVEL\n";
-
-  specimens.forEach(function(specimen) {
+  downloadPerSpecimenText(specimens, ".dat", "_converted_to_cenieh", function(specimen) {
+    let content = "";
+    content += "SAMPLE STEP INTENSITY DEC INC .... LEVEL\n";
     const { sample, steps } = specimen;
 
     steps.forEach(function(step) {
       // Convert cartesian coords back into direction
-      const direction = step.coordinates.toDirection();
-      const intensity = direction.intensity / 1e6; // import scaled by 1E6
-      const declination = direction.declination;
-      const inclination = direction.inclination;
+      const direction = stepToDirection(step);
+      const intensity = direction.length / 1e6; // import scaled by 1E6
+      const declination = direction.dec;
+      const inclination = direction.inc;
 
       // Extract level (CENIEH requires sampleName = base.level)
       let base = sample;
@@ -683,20 +703,8 @@ function convert_CENIEH() {
       // placeholders for unused columns ("....")
       content += `${base} ${step.step} ${intensity.toFixed(6)} ${declination.toFixed(2)} ${inclination.toFixed(2)} .... ${level}\n`;
     });
+    return content;
   });
-
-  // Create and download file
-  const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = "converted_specimens.cenieh";
-  document.body.appendChild(a);
-  a.click();
-
-  // Clean up
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
 }
 
 function convert_NGU() {
@@ -707,9 +715,8 @@ function convert_NGU() {
     return;
   }
 
-  let content = "";
-
-  specimens.forEach(function(specimen) {
+  downloadPerSpecimenText(specimens, ".dat", "_converted_to_ngu", function(specimen) {
+    let content = "";
     const { sample, volume, beddingStrike, beddingDip, coreAzimuth, coreDip, steps } = specimen;
 
     // NGU header
@@ -719,34 +726,24 @@ function convert_NGU() {
     const nguCoreDip = 90 - coreDip;
     const nguBeddingStrike = (beddingStrike + 90) % 360;
 
-    content += `${sample} ${coreAzimuth} ${nguCoreDip} ${nguBeddingStrike} ${beddingDip} Info\n`;
+    content += `${sample} ${coreAzimuth.toFixed(1)} ${nguCoreDip.toFixed(1)} ${nguBeddingStrike.toFixed(1)} ${beddingDip.toFixed(1)} ${Number(volume || 10).toFixed(2)} 1 1\n`;
 
     // NGU steps: convert Cartesian back to Dec/Inc/Intensity
     steps.forEach(function(step) {
       const intensity = Math.sqrt(step.x ** 2 + step.y ** 2 + step.z ** 2);
-      const dec = Math.atan2(step.x, step.y) * (180 / Math.PI);
+      const dec = normalizeDec(Math.atan2(step.y, step.x) * (180 / Math.PI));
       const inc = Math.asin(step.z / intensity) * (180 / Math.PI);
 
       // Intensity in μA -> convert back to mA
       const intensity_mA = intensity / 1E3;
+      const a95 = Number(step.error) || 0.0;
 
-      content += `${step.step} ${intensity_mA} ${dec.toFixed(2)} ${inc.toFixed(2)} ${step.error}\n`;
+      // Append additional NGU-style placeholders to match the true format.
+      content += `${step.step} ${intensity_mA.toFixed(4)} ${dec.toFixed(1)} ${inc.toFixed(1)} ${a95.toFixed(1)} 0.0 0.0 NOT MS\n`;
     });
 
+    return content;
   });
-
-  // Create a blob and download
-  const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = "converted_specimens.ngu";
-  document.body.appendChild(a);
-  a.click();
-
-  // Clean up
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
 }
 
 function convert_ANGLIA() {
@@ -757,9 +754,8 @@ function convert_ANGLIA() {
     return;
   }
 
-  let content = "";
-
-  specimens.forEach(function(specimen) {
+  downloadPerSpecimenText(specimens, ".dat", "_converted_to_anglia", function(specimen) {
+    let content = "";
     const { sample, volume, beddingStrike, beddingDip, coreAzimuth, coreDip, steps } = specimen;
 
     // Adjust beddingStrike back to Anglia's convention
@@ -776,25 +772,13 @@ function convert_ANGLIA() {
 
       // Convert Cartesian back to spherical (intensity, dec, inc)
       const intensity = Math.sqrt(x*x + y*y + z*z) / 1E3; // back to mA
-      const dec = Math.atan2(y, x) * 180 / Math.PI; // degrees
+      const dec = normalizeDec(Math.atan2(y, x) * 180 / Math.PI); // degrees
       const inc = Math.asin(z / Math.sqrt(x*x + y*y + z*z)) * 180 / Math.PI; // degrees
 
       content += `${step.step} ${intensity} 0 0 0 ${dec} ${inc}\n`; // fill unused fields with 0
     });
+    return content;
   });
-
-  // Create a blob and download
-  const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = "converted_specimens.ang";
-  document.body.appendChild(a);
-  a.click();
-
-  // Clean up
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
 }
 
 function convert_OXFORD() {
@@ -805,111 +789,225 @@ function convert_OXFORD() {
     return;
   }
 
-  let content = "";
-
-  specimens.forEach(function(specimen) {
+  downloadPerSpecimenText(specimens, ".dat", "_converted_to_oxford", function(specimen) {
+    let content = "";
+    content += "Sample ID\tDepth\tTreatment Type\tAF Z\tTemp C\tIRM Gauss\tIntensity\tDeclination: Sample Rotated\tInclination: Sample Rotated\tDeclination: Formation Rotated\tInclination: Formation Rotated\tDeclination: Unrotated\tInclination: Unrotated\tSample Azimiuth\tSample Dip\tFormation Dip Azimuth\tFormation Dip\tMag Dev\tVolume\tX corr\tY corr\tZ corr\tX mean\tY mean\tZ mean\tDrift corrected\tTray corrected\tX drift\tY drift\tZ drift\tX bkg #1\tX bkg #2\tY bkg #1\tY bkg #2\tZ bkg #1\tZ bkg #2\t# MM averaged\tRun #\tSample Timestamp\tTray Timestamp\tOrientation\tX intensity\tY intensity\tZ intensity\tX meter\tY meter\tZ meter\n";
     const { sample, volume, beddingStrike, beddingDip, coreAzimuth, coreDip, steps, demagnetizationType } = specimen;
-
-    // Build header line (Oxford often has two header lines, we mimic a simple one)
-    content += `Specimen\tType\tDemagMethod\tStep\tX\tY\tZ\tIntensity\tDec\tInc\tOther1\tOther2\n`;
 
     steps.forEach(function(step) {
       const intensity = Math.sqrt(step.x**2 + step.y**2 + step.z**2) * volume / 1E6; // reverse uAm/m -> original units
-      const dir = new Direction().fromCartesian(step.coordinates); // Assuming Direction class can do this
+      const dir = stepToDirection(step);
       const dec = dir.dec;
       const inc = dir.inc;
 
-      // Determine step column
-      let stepCol;
-      if(demagnetizationType === "thermal") {
-        stepCol = step.step; // mapped to column 4 in import
-      } else if(demagnetizationType === "alternating") {
-        stepCol = step.step; // mapped to column 3 in import
-      }
-
-      content += [
-        sample,                 // Specimen
-        "",                     // Type (optional)
-        demagnetizationType,    // DemagMethod
-        stepCol,                // Step
-        "", "", "",             // X, Y, Z (unused in original import)
-        intensity,              // Intensity (column 6)
-        dec,                    // Dec (column 11)
-        inc,                    // Inc (column 12)
-        "", ""                  // Other1, Other2
-      ].join("\t") + "\n";
+      const demagWord = demagnetizationType === "alternating" ? "Degauss" : "Thermal";
+      const row = new Array(45).fill("");
+      row[0] = sample;
+      row[1] = "0.00";
+      row[2] = demagWord;
+      row[3] = demagnetizationType === "alternating" ? String(step.step) : "0";
+      row[4] = demagnetizationType === "thermal" ? String(step.step) : "NA";
+      row[5] = "NA";
+      row[6] = (intensity || 0).toExponential(4);
+      row[7] = dec.toFixed(2);
+      row[8] = inc.toFixed(2);
+      row[9] = "0.00";
+      row[10] = "0.00";
+      row[11] = dec.toFixed(2);
+      row[12] = inc.toFixed(2);
+      row[13] = (Number(coreAzimuth) || 0).toFixed(2);
+      row[14] = (Number(coreDip) || 0).toFixed(2);
+      row[15] = (((Number(beddingStrike) || 0) + 90) % 360).toFixed(2);
+      row[16] = (Number(beddingDip) || 0).toFixed(2);
+      row[17] = "0.00";
+      row[18] = Math.abs(Number(volume) || 10);
+      
+      content += row.join("\t") + "\n";
     });
 
-    content += "\n"; // separate specimens by blank line
+    return content;
   });
-
-  // Create blob and download
-  const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = "converted_specimens.txt";
-  document.body.appendChild(a);
-  a.click();
-
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
 }
 
-function convert_PALEOMAC() {
-  console.log("Export PaleoMac function called.");
+function convert_SOUTHAMPTON() {
 
-  if (specimens.length === 0) {
+  console.log("Export Southampton function called.");
+
+  if (!Array.isArray(specimens) || specimens.length === 0) {
     alert("No specimens to export.");
     return;
   }
 
-  let content = " "; // initial line to match your LINE_REGEXP slice in import
+  downloadPerSpecimenText(
+    specimens,
+    ".dat",
+    "_converted_to_southampton",
+    function(specimen) {
 
-  specimens.forEach(function(specimen) {
-    const { sample, volume, beddingStrike, beddingDip, coreAzimuth, coreDip, steps } = specimen;
+      // IMPORTANT:
+      // We must NEVER leave columns empty because the importer uses:
+      // split(/[\t]+/)
+      // which collapses empty tab fields.
 
-    // Header formatting (fixed width)
-    // Positions based on importPaleoMac slices
-    const sampleName = sample.padEnd(9, ' ');
-    const coreAz = coreAzimuth.toString().padStart(5, ' ');
-    const coreHade = (90 - coreDip).toString().padStart(5, ' ');
-    const beddingStr = beddingStrike.toString().padStart(5, ' ');
-    const beddingDp = beddingDip.toString().padStart(5, ' ');
-    const vol = (volume / 1E6).toFixed(2).toString().padStart(7, ' ');
+      function makeRow() {
+        return new Array(67).fill("0");
+      }
 
-    content += `${sampleName}   ${coreAz} ${coreHade}   ${beddingStr} ${beddingDp}                       ${vol}\n`;
+      let content = "";
 
-    // Add steps
-    steps.forEach(function(step) {
-      const stepNum = step.step.toString().padStart(5, ' ');
-      const x = (step.x * volume / 1E6).toFixed(2).toString().padStart(9, ' ');
-      const y = (step.y * volume / 1E6).toFixed(2).toString().padStart(11, ' ');
-      const z = (step.z * volume / 1E6).toFixed(2).toString().padStart(9, ' ');
-      const a95 = (step.error || 0).toFixed(0).toString().padStart(4, ' ');
+      // Dummy header row
+      content += "Southampton\tExport\n";
 
-      content += `${stepNum}${x}${y}${z}                                      ${a95}\n`;
-    });
+      const demagLabel =
+        specimen.demagnetizationType === "alternating"
+          ? "Degauss"
+          : "Thermal";
 
-    // Footer line (optional depending on PaleoMac)
-    content += "\n";
-  });
+      const stepIndex =
+        specimen.demagnetizationType === "alternating"
+          ? 62
+          : 66;
 
-  // Create a blob and download
-  const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = "converted_specimens.pal";
-  document.body.appendChild(a);
-  a.click();
+      const sampleVolume =
+        Math.abs(Number(specimen.volume) || 1);
 
-  // Clean up
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+      // Importer reverses this with +270
+      const bedStrikeInput =
+        (Number(specimen.beddingStrike) + 90) % 360;
+
+
+      // Measurement rows
+      (specimen.steps || []).forEach(function(step) {
+
+        const dir = stepToDirection(step);
+
+        const row = makeRow();
+
+        row[0] = specimen.sample || specimen.name || "";
+
+        row[5] = sampleVolume;
+
+        row[7]  = dir.inc.toFixed(4);
+        row[10] = dir.dec.toFixed(4);
+
+        // Importer converts back using:
+        // intensity = 1E6 * value / sampleVolume
+        row[13] =
+          ((dir.length * sampleVolume) / 1E6).toExponential(8);
+
+        row[14] = Number(specimen.coreAzimuth) || 0;
+        row[15] = Number(specimen.coreDip) || 0;
+
+        row[16] = bedStrikeInput;
+        row[17] = Number(specimen.beddingDip) || 0;
+
+        row[59] = demagLabel;
+
+        row[stepIndex] = step.step;
+
+        content += row.join("\t") + "\n";
+      });
+
+      return content;
+    }
+  );
 }
 
+function convert_PALEOMAC() {
+  console.log("Export PaleoMac function called.");
+  if (specimens.length === 0) {
+    alert("No specimens to export.");
+    return;
+  }
+  downloadPerSpecimenText(specimens, ".pmd", "_converted_to_paleomac", function(specimen) {
+    let content = "";
+    content += "\n"; // initial blank line to match import slice(1)
+    const { sample, volume, beddingStrike, beddingDip, coreAzimuth, coreDip, steps } = specimen;
 
+    // specimen.volume is stored as (m³ × 1E6), so convert back to m³
+    const sampleVolumeM3 = volume / 1E6;
+
+    // Header field formatting — each must occupy EXACT character positions:
+    // pos 0-8:  sample name (9 chars)
+    // pos 9:    ' '
+    // pos 10-11:'a='
+    // pos 12-16: azimuth (5 chars, right-justified)   ← slice(12,17)
+    // pos 17-21: '   b='
+    // pos 22-26: hade (5 chars)                       ← slice(22,27)
+    // pos 27-31: '   s='
+    // pos 32-36: beddingStrike (5 chars)              ← slice(32,37)
+    // pos 37-41: '   d='
+    // pos 42-46: beddingDip (5 chars)                 ← slice(42,47)
+    // pos 47-51: '   v='
+    // pos 52-58: volume (7 chars)                     ← slice(52,59)
+    // pos 59+:   'm3'
+    const sampleName = sample.padEnd(9, ' ');
+    const coreAz    = coreAzimuth.toFixed(1).padStart(5, ' ');
+    const coreHade  = (90 - coreDip).toFixed(1).padStart(5, ' ');
+    const beddingStr = beddingStrike.toFixed(1).padStart(5, ' ');
+    const beddingDp  = beddingDip.toFixed(1).padStart(5, ' ');
+
+    // Volume must fit in exactly 7 chars as a valid number string
+    // Use standard exponential with enough precision to stay ≤7 chars
+    function formatVol(m3) {
+      for (let prec = 2; prec >= 0; prec--) {
+        const s = m3.toExponential(prec).toUpperCase();
+        if (s.length <= 7) return s.padStart(7, ' ');
+      }
+      return m3.toExponential(0).toUpperCase().padStart(7, ' ');
+    }
+    const vol = formatVol(sampleVolumeM3);
+
+    content += `${sampleName} a=${coreAz}   b=${coreHade}   s=${beddingStr}   d=${beddingDp}   v=${vol}m3\n`;
+
+    // Column header line (unchanged)
+    content += " PAL  Xc (Am2)  Yc (Am2)  Zc (Am2)  MAG(A/m)   Dg    Ig    Ds    Is   a95 \n";
+
+    function formatExp(num) {
+      return num.toExponential(2).toUpperCase().replace(/E([+-])(\d)$/, 'E$10$2');
+    }
+
+    // Data line field layout — must match importer slices EXACTLY:
+    // [0:5]   step     (5 chars, left-justified)
+    // [5:14]  x        (9 chars, right-justified)    ← slice(5,14)
+    // [14]    ' '
+    // [15:24] y        (9 chars, right-justified)
+    // [24]    ' '      → y occupies [15:25] as read by importer ✓
+    // [25:34] z        (9 chars, right-justified)    ← slice(25,34)
+    // [34:36] '  '
+    // [36:44] mag      (8 chars, right-justified)    ← slice(36,44)
+    // [44:50] Dg       (6 chars)
+    // [50:56] Ig       (6 chars)
+    // [56:62] Ds       (6 chars)
+    // [62:68] Is       (6 chars)
+    // [68]    ' '
+    // [69:73] a95      (4 chars)                     ← slice(69,73)
+
+    steps.forEach(function(step) {
+      const stepNum = (parseFloat(step.step) % 1 === 0
+        ? parseInt(step.step).toString()
+        : parseFloat(step.step).toString()
+      ).padEnd(5, ' ');//file format only allows int, or else it won't fit when step is >1000
+      const x   = formatExp(step.x * sampleVolumeM3 / 1E6).padStart(9, ' ');
+      const y   = formatExp(step.y * sampleVolumeM3 / 1E6).padStart(9, ' ');
+      const z   = formatExp(step.z * sampleVolumeM3 / 1E6).padStart(9, ' ');
+      const m   = Math.sqrt(step.x * step.x + step.y * step.y + step.z * step.z);
+      const mag = formatExp(m * sampleVolumeM3 / 1E6).padStart(8, ' ');
+      const a95 = (step.error || 0).toFixed(1).padStart(4, ' ');
+
+      // Placeholder direction fields (6 chars each)
+      const dg = '   0.0';
+      const ig = '   0.0';
+      const ds = '   0.0';
+      const is_ = '   0.0';
+
+      content += `${stepNum}${x} ${y} ${z}  ${mag}${dg}${ig}${ds}${is_} ${a95}\n`;
+    });
+
+    content += "\n";
+    return content;
+  });
+}
 
 function convert_JR6() {
   console.log("Export JR6 function called.");
@@ -924,6 +1022,10 @@ function convert_JR6() {
   specimens.forEach(function(specimen) {
     const { sample, steps, coreAzimuth, coreDip, beddingStrike, beddingDip, volume } = specimen;
 
+    function formatJR6Component(value) {
+      return value.toFixed(2).replace(/\.?0+$/, '').padStart(6, ' ');
+    }
+
     steps.forEach(function(step) {
       // Reverse Coordinates scaling
       const x = step.x / 1e6; // Step values in import used exp factor
@@ -937,36 +1039,49 @@ function convert_JR6() {
         exp = Math.floor(Math.log10(maxComp));
       }
       const scale = Math.pow(10, exp);
-      const X = (x / scale).toFixed(0).padStart(6, ' ');
-      const Y = (y / scale).toFixed(0).padStart(6, ' ');
-      const Z = (z / scale).toFixed(0).padStart(6, ' ');
+      const X = formatJR6Component(x / scale);
+      const Y = formatJR6Component(y / scale);
+      const Z = formatJR6Component(z / scale);
 
       const stepStr = step.step.toString().padEnd(8, ' ');
       const sampleStr = sample.padEnd(10, ' ');
       const coreAzStr = coreAzimuth.toString().padStart(4, ' ');
-      const coreDipStr = coreDip.toString().padStart(4, ' ');
-      const beddingStrikeStr = beddingStrike.toString().padStart(4, ' ');
+      // When P2=0, importer does: coreDip = 90 - coreDip. So we export the inverse.
+      const exportCoreDip = 90 - coreDip;
+      const coreDipStr = exportCoreDip.toString().padStart(4, ' ');
+      // When P4=0, importer does: beddingStrike = beddingStrike - 90. So we export the inverse.
+      const exportBeddingStrike = (beddingStrike + 90) % 360;
+      const beddingStrikeStr = exportBeddingStrike.toString().padStart(4, ' ');
       const beddingDipStr = beddingDip.toString().padStart(4, ' ');
       const a95Str = step.error ? step.error.toFixed(0).padStart(4, ' ') : '   0';
       
-      // AGICO fields: For now, we can put placeholders
-      const P1 = '000';
-      const P2 = '000';
-      const P3 = '000';
-      const P4 = '000';
+      // Supported AGICO parameter set
+      const P1 = String(12).padStart(3, ' ');
+      const P2 = String(0).padStart(3, ' ');
+      const P3 = String(12).padStart(3, ' ');
+      const P4 = String(0).padStart(3, ' ');
 
-      content += `${sampleStr}${stepStr}${X}${Y}${Z}${exp.toString().padStart(4, ' ')}${coreAzStr}${coreDipStr}${beddingStrikeStr}${beddingDipStr}    ${P1}${P2}${P3}${P4}${a95Str}\n`;
+      // Fixed-width layout (must match importer slices):
+      // 0-9: sampleStr (10), 10-17: stepStr (8), 18-23: X (6), 24-29: Y (6), 30-35: Z (6),
+      // 36-39: exp (4), 40-43: coreAz (4), 44-47: coreDip (4), 48-51: beddingStrike (4),
+      // 52-55: (4 spaces), 56-59: beddingDip (4), 60-63: (4 spaces), 64-66: P1, 67: space,
+      // 68-70: P2, 71-73: P3, 74-76: P4, 77-80: a95
+      content += `${sampleStr}${stepStr}${X}${Y}${Z}${exp.toString().padStart(4, ' ')}${coreAzStr}${coreDipStr}${beddingStrikeStr}    ${beddingDipStr}    ${P1} ${P2}${P3}${P4}${a95Str}\n`;
     });
   });
 
-  // Create blob and download
+  // Create a blob and download
   const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = "converted_specimens.jr6";
+  
+  let exportName = specimens[0].originalFile || "converted_specimens.jr6";
+  a.download = exportName.replace(/\.[^/.]+$/, "") + "_converted_to_jr6.jr6";
   document.body.appendChild(a);
   a.click();
+
+  // Clean up
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
 }
@@ -979,18 +1094,22 @@ function convert_JR5() {
     return;
   }
 
-  let content = "";
-
-  specimens.forEach(function(specimen) {
+  downloadPerSpecimenText(specimens, ".jra", "_converted_to_jr5", function(specimen) {
+    let content = "";
     const { sample, volume, beddingStrike, beddingDip, coreAzimuth, coreDip, steps } = specimen;
 
+    function formatJR5Component(value) {
+      return value.toFixed(2).replace(/\.?0+$/, '').padStart(6, ' ');
+    }
+
     steps.forEach(function(step) {
-      const exp = Math.floor(Math.log10(Math.abs(step.x || 1e-12) * 1e6));
+      const maxComp = Math.max(Math.abs(step.x), Math.abs(step.y), Math.abs(step.z), 1e-12);
+      const exp = Math.floor(Math.log10(maxComp)) - 6;
       const factor = 1E6 * Math.pow(10, exp);
 
-      const x = (step.x * volume) / factor;
-      const y = (step.y * volume) / factor;
-      const z = (step.z * volume) / factor;
+      const x = step.x / factor;
+      const y = step.y / factor;
+      const z = step.z / factor;
 
       // JR5 uses fixed-width columns:
       // 0-9: sample name
@@ -1006,9 +1125,9 @@ function convert_JR5() {
       content +=
         sample.padEnd(10) +
         String(step.step).padEnd(8) +
-        String(x.toFixed(0)).padStart(6) +
-        String(y.toFixed(0)).padStart(6) +
-        String(z.toFixed(0)).padStart(6) +
+        formatJR5Component(x) +
+        formatJR5Component(y) +
+        formatJR5Component(z) +
         String(exp).padStart(4) +
         String(coreAzimuth).padStart(4) +
         String(coreDip).padStart(4) +
@@ -1018,20 +1137,8 @@ function convert_JR5() {
         "\n";
     });
 
+    return content;
   });
-
-  // Create a blob and download
-  const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = "converted_specimens.jr5";
-  document.body.appendChild(a);
-  a.click();
-
-  // Clean up
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
 }
 
 function convert_BLACKMOUNTAIN() {
@@ -1042,23 +1149,34 @@ function convert_BLACKMOUNTAIN() {
     return;
   }
 
-  let content = "";
-
-  specimens.forEach(function(specimen) {
+  downloadPerSpecimenText(specimens, ".xpca", "_converted_to_blackmountain", function(specimen) {
+    let content = "";
     const { sample, volume, beddingStrike, beddingDip, coreAzimuth, coreDip, steps } = specimen;
+
+    function formatBlackMountainStep(stepValue) {
+      const n = Number(stepValue);
+      return Number.isInteger(n) ? n.toFixed(0) : n.toString();
+    }
+
+    // Header line is required by the Black Mountain importer; it skips the first line.
+    content += "Dmgstep X_raw Y_raw Z_raw D_raw I_raw M_raw X_sample Y_sample Z_sample D_sample I_sample M_sample X_formation Y_formation Z_formation D_formation I_formation M_formation Sample Dip Azimuth Formation Dip\n";
 
     // For Black Mountain, volume is not used; intensities are in A/m already
     steps.forEach(function(step) {
-      const x = step.x; // Already in A/m
-      const y = step.y;
-      const z = step.z;
+      const x = step.x / 1E6;
+      const y = step.y / 1E6;
+      const z = step.z / 1E6;
+      const c = new Coordinates(step.x, step.y, step.z);
+      const g = c.rotateTo(coreAzimuth, coreDip).toVector(Direction);
+      const t = c.rotateTo(coreAzimuth, coreDip).correctBedding(beddingStrike, beddingDip).toVector(Direction);
 
       // Using placeholder values for unused columns (like geographic/tectonic vectors)
       // Column order roughly: step, X, Y, Z, ..., GDec, GInc, ..., TDec, TInc, ..., coreAz, coreDip, beddingStrike, beddingDip
       const placeholder = 0;
 
+      const exportCoreDip = coreDip - 90;
       content += [
-        step.step,     // step number
+        formatBlackMountainStep(step.step),     // step number
         x, y, z,       // X, Y, Z components in A/m
         placeholder,   // column 4
         placeholder,   // column 5
@@ -1066,33 +1184,21 @@ function convert_BLACKMOUNTAIN() {
         placeholder,   // column 7
         placeholder,   // column 8
         placeholder,   // column 9
-        0, 0,          // GDec, GInc (placeholder)
+        g.dec.toFixed(2), g.inc.toFixed(2),
         placeholder,   // column 12
         placeholder,   // column 13
         placeholder,   // column 14
         placeholder,   // column 15
-        0, 0,          // TDec, TInc (placeholder)
+        t.dec.toFixed(2), t.inc.toFixed(2),
         placeholder,   // column 18
         coreAzimuth,   // coreAzimuth
-        coreDip,       // coreDip
+        exportCoreDip, // coreDip
         beddingStrike, // beddingStrike
         beddingDip     // beddingDip
       ].join(" ") + "\n";
     });
+    return content;
   });
-
-  // Create a blob and download
-  const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = "converted_specimens.anu";
-  document.body.appendChild(a);
-  a.click();
-
-  // Clean up
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
 }
 
 function convert_UNKNOWN() {
@@ -1103,10 +1209,12 @@ function convert_UNKNOWN() {
     return;
   }
 
-  let content = "";
-
-  specimens.forEach(function(specimen) {
+  downloadPerSpecimenText(specimens, ".dms", "_converted_to_unknown", function(specimen) {
+    let content = "";
     const { sample, volume, beddingStrike, beddingDip, coreAzimuth, coreDip, steps } = specimen;
+
+    // Placeholder header for UNKNOWN importer; it skips the first row.
+    content += "Sample Step Header Placeholder\n";
 
     steps.forEach(function(step) {
       const x = step.x / 1E9; // convert back from Am^2 to original units
@@ -1114,46 +1222,35 @@ function convert_UNKNOWN() {
       const z = step.z / 1E9;
 
       // Step value
-      const stepValue = step.step;
+      const rawStepValue = Number(step.step);
+      const stepValue = Number.isFinite(rawStepValue)
+        ? (Number.isInteger(rawStepValue) ? rawStepValue.toFixed(0) : rawStepValue.toString())
+        : step.step;
 
-      // Assuming Unknown format has 45 columns like in importUnknown
-      let line = new Array(45).fill("");
+      // Unknown parser splits on whitespace, so emit numeric placeholders to preserve indexes.
+      let line = new Array(45).fill("0");
 
       // Column assignments (based on importUnknown)
-      line[0] = sample;              // sample name
-      line[1] = stepValue;           // step in degmagnetization column
-      line[5] = volume;              // sample volume
-      line[7] = coreAzimuth;         // coreAzimuth
-      line[8] = 180 - (90 - coreDip); // coreDip in original orientation
-      line[9] = beddingStrike;       // beddingStrike
-      line[10] = beddingDip;         // beddingDip
-      line[21] = x;                  // X component
-      line[22] = y;                  // Y component
-      line[23] = z;                  // Z component
+      line[0] = sample;                              // sample name
+      line[1] = stepValue;                           // step in degmagnetization column
+      line[5] = volume;                              // sample volume
+      line[7] = coreAzimuth;                         // coreAzimuth
+      line[8] = - (90 - coreDip);                // coreDip in original orientation
+      line[9] = beddingStrike;                       // beddingStrike
+      line[10] = beddingDip;                         // beddingDip
+      line[21] = x.toExponential(15);               // X component
+      line[22] = y.toExponential(15);               // Y component
+      line[23] = z.toExponential(15);               // Z component
 
-      // Other columns can remain empty
-      content += line.join("\t") + "\n";
+      content += line.join(" ") + "\n";
     });
 
-    // Optional: add a blank line or separator if needed
-    content += "\n";
+    return content;
   });
-
-  // Create a blob and download
-  const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = "converted_specimens.txt";
-  document.body.appendChild(a);
-  a.click();
-
-  // Clean up
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
 }
 
 function convert_PALEOMAG() {
+
   console.log("Export PaleoMag function called.");
 
   if (specimens.length === 0) {
@@ -1161,194 +1258,482 @@ function convert_PALEOMAG() {
     return;
   }
 
-  let content = "";
+  downloadPerSpecimenText(
+    specimens,
+    ".pmag",
+    "_converted_to_paleomag",
+    function(specimen) {
 
-  specimens.forEach(function(specimen) {
-    const { sample, volume, beddingStrike, beddingDip, coreAzimuth, coreDip, level, steps } = specimen;
+      let content = "";
 
-    // First line: sample name
-    content += `${sample}\n`;
+      const {
+        sample,
+        volume,
+        beddingStrike,
+        beddingDip,
+        coreAzimuth,
+        coreDip,
+        level,
+        steps
+      } = specimen;
 
-    // Second line: parameters (level, coreAzimuth, coreDip, beddingStrike, beddingDip, volume)
-    // Reversing the CIT convention for coreAzimuth and coreDip
-    const coreAz = ((coreAzimuth + 90) % 360).toFixed(0);
-    const coreDp = (90 - coreDip).toFixed(0);
-    content += ` ${level} ${coreAz} ${coreDp} ${beddingStrike} ${beddingDip} ${volume}\n`;
+      const exportedLevel = (level == null ? 0 : level);
 
-    // Steps
-    steps.forEach(function(step) {
-      // Convert Cartesian coordinates back to dec/inc/intensity
-      const dir = Direction.fromCartesian(step); // assuming Direction has a static constructor from Measurement
-      const dec = dir.dec.toFixed(1).padStart(5);
-      const inc = dir.inc.toFixed(1).padStart(5);
-      const intensity = (dir.intensity / 1E9).toFixed(8).padStart(8); // reverse uA/m -> emu/cm3
+      // PaleoMag header line
+      content += `${sample}\n`;
 
-      const stepNum = step.step.toString().padStart(4, " ");
-      const a95 = (step.error || 0).toFixed(1).padStart(5);
-      const info = "".padEnd(28);
+      // Reverse CIT convention
+      const coreAz =
+        ((Number(coreAzimuth) + 90) % 360).toFixed(0);
 
-      content += `${stepNum}${dec}${inc}${intensity}${a95}${info}\n`;
-    });
-  });
+      const coreDp =
+        (90 - Number(coreDip)).toFixed(0);
 
-  // Create a blob and download
-  const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = "converted_specimens.pmag";
-  document.body.appendChild(a);
-  a.click();
+      content +=
+        ` ${exportedLevel} ${coreAz} ${coreDp} ${beddingStrike} ${beddingDip} ${volume}\n`;
 
-  // Clean up
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+      // Measurement steps
+      (steps || []).forEach(function(step) {
+
+        const dir = stepToDirection(step);
+
+        const stepNum =
+          String(step.step || "0").padStart(4, " ");
+
+        // Importer expects:
+        // intensity -> cols 31-39
+        // a95      -> cols 40-45
+        // dec      -> cols 46-51
+        // inc      -> cols 52-57
+
+        const intensity =
+          (dir.length / 1E9)
+            .toExponential(2)
+            .padStart(8, " ");
+
+        const a95 =
+          (step.error || 0)
+            .toFixed(1)
+            .padStart(5, " ");
+
+        const dec =
+          dir.dec
+            .toFixed(1)
+            .padStart(5, " ");
+
+        const inc =
+          dir.inc
+            .toFixed(1)
+            .padStart(5, " ");
+
+        let line = "";
+
+        // cols 0-1
+        line += "  ";
+
+        // cols 2-5
+        line += stepNum;
+
+        // pad until intensity column
+        line = line.padEnd(31, " ");
+
+        // cols 31-38
+        line += intensity;
+
+        // col 39
+        line += " ";
+
+        // cols 40-44
+        line += a95;
+
+        // col 45
+        line += " ";
+
+        // cols 46-50
+        line += dec;
+
+        // col 51
+        line += " ";
+
+        // cols 52-56
+        line += inc;
+
+        content += line + "\n";
+      });
+
+      return content;
+    }
+  );
 }
-
 function convert_MAGIC() {
+
   console.log("Export MagIC function called.");
 
-  if (specimens.length === 0) {
+  if(specimens.length === 0) {
     alert("No specimens to export.");
     return;
   }
 
-  // MagIC tables header delimiter
   const DELIM = ">>>>>>>>>>";
 
-  // We'll create each table as an array of lines
-  let contributionTable = [
-    "contribution\tcontribution_id\tcontributor\tdata_model_version",
-    "contribution\tcontrib1\tAnonymous\t3.0"
-  ];
-  let sitesTable = [
-    "sites\tsite\tlat\tlon\tage\tage_low\tage_high\tage_sigma",
-    "sites\tSite1\t0\t0\t\t\t\t"
-  ];
-  let samplesTable = [
-    "samples\tsample\tsite\tlevel\tbed_dip_direction\tbed_dip\tazimuth\tdip",
-  ];
-  let specimensTable = [
-    "specimens\tspecimen\tsample\tvolume\tmeas_step_min\tmeas_step_max\tmeas_step_unit\tmethod_codes",
-  ];
-  let measurementsTable = [
-    "measurements\tmeasurement\tspecimen\ttreat_temp\ttreat_ac_field\tdir_dec\tdir_inc\tmagn_volume\tmagn_moment\tmethod_codes"
+  let contributionLines = [
+    "tab delimited\tcontribution",
+    "version\ttimestamp\tcontributor\tdata_model_version",
+    "1\t" +
+    new Date().toISOString() +
+    "\tAnonymous\t3.0"
   ];
 
-  // Keep track of sample & site mapping
-  let sampleCounter = 1;
-  let siteCounter = 1;
-  let siteName = "Site" + siteCounter;
+  let sitesMap = {};
+  let samplesMap = {};
 
   specimens.forEach(function(specimen) {
-    // Add sample row (assuming one specimen = one sample for simplicity)
-    let sampleName = specimen.sample;
-    samplesTable.push(`${sampleName}\t${siteName}\t${specimen.level || ""}\t${specimen.beddingStrike || ""}\t${specimen.beddingDip || ""}\t${specimen.coreAzimuth || ""}\t${specimen.coreDip || ""}`);
 
-    // Determine min/max steps
-    let minStep = Math.min(...specimen.steps.map(s => s.step));
-    let maxStep = Math.max(...specimen.steps.map(s => s.step));
-    let stepUnit = specimen.demagnetizationType === "alternating" ? "mT" : "C";
+    let sampleName =
+      specimen.sample || specimen.name;
 
-    // Determine method codes
-    let methodCodes = specimen.demagnetizationType === "alternating" ? "LP-DIR-AF" : "LP-DIR-T";
+    let siteName =
+      specimen.site || "unknown_site";
 
-    // Add specimen row
-    specimensTable.push(`${specimen.sample}\t${sampleName}\t${specimen.volume || 1E-5}\t${minStep}\t${maxStep}\t${stepUnit}\t${methodCodes}`);
+    if(!sitesMap[siteName]) {
 
-    // Add measurement rows
-    specimen.steps.forEach(function(step) {
-      let treatTemp = null, treatAF = null;
+      sitesMap[siteName] = {
 
-      if(specimen.demagnetizationType === "thermal") {
-        treatTemp = step.step + (stepUnit === "K" ? 273 : 0);
-      } else if(specimen.demagnetizationType === "alternating") {
-        treatAF = step.step;
+        lat:
+          specimen.latitude != null
+            ? specimen.latitude
+            : "",
+
+        lon:
+          specimen.longitude != null
+            ? (
+                specimen.longitude < 0
+                  ? specimen.longitude + 360
+                  : specimen.longitude
+              )
+            : "",
+
+        age:
+          specimen.age != null
+            ? specimen.age
+            : "",
+
+        age_low:
+          specimen.ageMin != null
+            ? specimen.ageMin
+            : "",
+
+        age_high:
+          specimen.ageMax != null
+            ? specimen.ageMax
+            : "",
+
+        age_sigma: ""
+
+      };
+
+    }
+
+    if(!samplesMap[sampleName]) {
+
+      samplesMap[sampleName] = {
+
+        site: siteName,
+
+        level:
+          specimen.level || "",
+
+        bed_dip_direction:
+          specimen.beddingStrike != null
+            ? specimen.beddingStrike + 90
+            : "",
+
+        bed_dip:
+          specimen.beddingDip || "",
+
+        azimuth:
+          specimen.coreAzimuth || "",
+
+        dip:
+          specimen.coreDip || ""
+
+      };
+
+    }
+
+  });
+
+  let sitesLines = [
+    "tab delimited\tsites",
+    "site\tlat\tlon\tage\tage_low\tage_high\tage_sigma"
+  ];
+
+  Object.entries(sitesMap).forEach(function([siteName, s]) {
+
+    sitesLines.push(
+      `${siteName}\t${s.lat}\t${s.lon}\t${s.age}\t${s.age_low}\t${s.age_high}\t${s.age_sigma}`
+    );
+
+  });
+
+  let samplesLines = [
+    "tab delimited\tsamples",
+    "sample\tsite\tlevel\tbed_dip_direction\tbed_dip\tazimuth\tdip"
+  ];
+
+  Object.entries(samplesMap).forEach(function([sampleName, s]) {
+
+    samplesLines.push(
+      `${sampleName}\t${s.site}\t${s.level}\t${s.bed_dip_direction}\t${s.bed_dip}\t${s.azimuth}\t${s.dip}`
+    );
+
+  });
+
+  let specimensLines = [
+    "tab delimited\tspecimens",
+    "specimen\tsample\tvolume\tmeas_step_min\tmeas_step_max\tmeas_step_unit\tmethod_codes"
+  ];
+
+  let measurementsLines = [
+    "tab delimited\tmeasurements",
+    "measurement\tspecimen\ttreat_temp\ttreat_ac_field\tdir_dec\tdir_inc\tmagn_moment\tmethod_codes"
+  ];
+
+  let measurementCounter = 1;
+
+  specimens.forEach(function(specimen) {
+
+    let sampleName =
+      specimen.sample || specimen.name;
+
+    let methodCodes = [];
+
+    if(specimen.demagnetizationType === "alternating") {
+      methodCodes.push("LP-DIR-AF");
+    } else {
+      methodCodes.push("LP-DIR-T");
+    }
+
+    if(specimen.interpretations &&
+       specimen.interpretations.length > 0) {
+
+      let interp = specimen.interpretations[0];
+
+      if(interp.type === "TAU3") {
+        methodCodes.push("DE-BFP");
+      } else {
+        methodCodes.push("DE-BFL");
       }
 
-      // Convert x, y, z back to declination/inclination
-      let dir = Direction.fromCartesian(step); // assuming you have a helper
-      measurementsTable.push(`${step.step}\t${treatTemp || ""}\t${treatAF || ""}\t${dir.dec}\t${dir.inc}\t${specimen.volume || ""}\t${step.moment || ""}\t${methodCodes}`);
+      if(interp.anchored) {
+        methodCodes.push("DE-BFL-A");
+      }
+
+    }
+
+    methodCodes = methodCodes.join(":");
+
+    let steps = specimen.steps;
+
+    if(!steps || steps.length === 0) {
+      return;
+    }
+
+    let stepValues =
+      steps.map(s => parseFloat(s.step));
+
+    let minStep = Math.min(...stepValues);
+    let maxStep = Math.max(...stepValues);
+
+    let stepUnit =
+      specimen.demagnetizationType === "alternating"
+        ? "T"
+        : "K";
+
+    let volumeM3 =
+      (specimen.volume || 10) / 1E6;
+
+    let minStepExport =
+      specimen.demagnetizationType === "alternating"
+        ? minStep / 1000
+        : minStep + 273;
+
+    let maxStepExport =
+      specimen.demagnetizationType === "alternating"
+        ? maxStep / 1000
+        : maxStep + 273;
+
+    specimensLines.push(
+      `${specimen.name}\t${sampleName}\t${volumeM3}\t${minStepExport}\t${maxStepExport}\t${stepUnit}\t${methodCodes}`
+    );
+
+    steps.forEach(function(step) {
+
+      let dir = stepToDirection(step);
+
+      let treatTemp = "";
+      let treatAF = "";
+
+      if(specimen.demagnetizationType === "thermal") {
+
+        treatTemp =
+          parseFloat(step.step) + 273;
+
+      } else {
+
+        treatAF =
+          parseFloat(step.step) / 1000;
+
+      }
+
+      let magnMoment;
+
+      if(step.moment != null) {
+
+        magnMoment = step.moment;
+
+      } else {
+
+        let intensity = dir.length;
+
+        magnMoment =
+          intensity *
+          volumeM3 /
+          1E5;
+
+      }
+
+      measurementsLines.push(
+        `${measurementCounter++}\t${specimen.name}\t${treatTemp}\t${treatAF}\t${dir.dec}\t${dir.inc}\t${magnMoment}\t${methodCodes}`
+      );
+
     });
 
   });
 
-  // Combine tables into final content
   let content = [
-    DELIM, contributionTable.join("\n"),
-    DELIM, sitesTable.join("\n"),
-    DELIM, samplesTable.join("\n"),
-    DELIM, specimensTable.join("\n"),
-    DELIM, measurementsTable.join("\n")
+
+    contributionLines.join("\n"),
+
+    DELIM,
+
+    sitesLines.join("\n"),
+
+    DELIM,
+
+    samplesLines.join("\n"),
+
+    DELIM,
+
+    specimensLines.join("\n"),
+
+    DELIM,
+
+    measurementsLines.join("\n")
+
   ].join("\n");
 
-  // Create blob and download
-  const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
+  const blob = new Blob(
+    [content],
+    { type: "text/plain;charset=utf-8" }
+  );
+
   const url = URL.createObjectURL(blob);
+
   const a = document.createElement("a");
+
   a.href = url;
-  a.download = "converted_specimens.magic";
+  a.download = "converted_specimens.txt";
+
   document.body.appendChild(a);
+
   a.click();
 
-  // Clean up
   document.body.removeChild(a);
+
   URL.revokeObjectURL(url);
+
 }
 
 function convert_RENNES() {
-  console.log("Export Rennes function called.");
+  console.log("Export Rennes function called with zip.");
 
-  if (specimens.length === 0) {
+  if (!Array.isArray(specimens) || specimens.length === 0) {
     alert("No specimens to export.");
     return;
   }
 
-  let content = "";
+  downloadPerSpecimenText(specimens, ".txt", "_converted_to_rennes", function(specimen, sIndex) {
 
-  specimens.forEach(function(specimen) {
-    const { sample, name, volume, latitude, longitude, beddingStrike, beddingDip, coreAzimuth, coreDip, steps } = specimen;
+    const sample = specimen.sample || specimen.name || `S${sIndex}`;
+    const name = specimen.name || sample;
+    const volume = specimen.volume || 0;
+    const latitude = specimen.latitude || 0;
+    const longitude = specimen.longitude || 0;
 
-    // Header block (simplified, matches what importRennes expects)
-    content += "--------------  Parameters sample & data   ----------------\n";
-    content += `Sample: ${sample}\n`;
-    content += `Name: ${name}\n`;
-    content += `Volume: ${volume}\n`;
-    content += `Latitude: ${latitude} N\n`;
-    content += `Longitude: ${longitude} E\n`;
-    content += "...\n"; // Lines 5-9 not strictly used, placeholder
-    content += "Orientation: A12_0_3_9\n"; // Required by your importRennes
-    content += `CoreAzimuth: ${coreAzimuth + 90}\n`; // reverse the flipping done during import
-    content += `CoreDip: ${90 - coreDip}\n`;
-    content += `BeddingStrike: ${beddingStrike}\n`;
-    content += `BeddingDip: ${beddingDip}\n`;
+    const beddingStrike = Number(specimen.beddingStrike) || 0;
+    const beddingDip = Number(specimen.beddingDip) || 0;
+    const coreAzimuth = Number(specimen.coreAzimuth) || 0;
+    const coreDip = Number(specimen.coreDip) || 0;
 
-    // Step data
-    steps.forEach(function(step) {
-      const dir = step.coordinates.toDirection(); // convert Cartesian to dec/inc/intensity
-      const intensity = dir.intensity / 1E6; // Convert back to original units expected by Rennes
-      const dec = dir.dec;
-      const inc = dir.inc;
+    const steps = Array.isArray(specimen.steps) ? specimen.steps : [];
 
-      content += `Step ${step.step}  ...  ${intensity.toFixed(6)}  ...  ${dec.toFixed(2)}  ${inc.toFixed(2)}\n`;
+    let content = "";
+
+    // ---- Header ----
+    content += "--------------  Parameters sample & data   ----------------\n\n";
+    content += `Site     :  ${sample}\n`;
+    content += `Sample   :  ${sample}\n`;
+    content += `Specimen :  ${name}\n`;
+    content += `Volume   : ${volume}     masse :   n.d\n`;
+    content += `Lat :  ${latitude}     Long :    ${longitude}     Elevation :   0.0\n`;
+    content += `Sampling date     :  0  0  0\n`;
+    content += `Sampling time UTM :   0  0\n`;
+    content += `azimuth mag : 0.0  IGRF  Declination :  0.0\n`;
+    content += `azimuth sun : 0.0  Local Declination :  0.0\n`;
+
+    // MUST be line index 9
+    content += `Orientation :  "use AGICO code A12_0_3_9"\n`;
+
+    // MUST be lines 10..13
+    content += `core azimuth   :   ${coreAzimuth + 90}\n`;
+    content += `core dip       :   ${90 - coreDip}\n`;
+    content += `Strike bedding :   ${beddingStrike}\n`;
+    content += `Dip bedding    :   ${beddingDip}\n`;
+
+    // filler geology lines
+    content += `Formation   :   ""\n`;
+    content += `Age         :   ""\n`;
+    content += `Lithology   :   ""\n`;
+    content += `Locality    :   ""\n`;
+    content += `Observation :   ""\n`;
+    content += `dc applied magnetic field :  0.0  ∂T\n`;
+
+    // ---- Table header ----
+    content += "  Step code  Mag(Am2)      A/m    Am2/kg    Dsc   Isc     Dis   Iis     Dtc   Itc    q  Mag     K\n";
+
+    // ---- Data ----
+    steps.forEach(function(stepObj, idx) {
+
+      const stepNum = stepObj.step !== undefined ? stepObj.step : (idx + 1);
+
+      const v = new Coordinates(stepObj.x, stepObj.y, stepObj.z).toVector(Direction);
+
+	  const dec = v.dec;
+	  const inc = v.inc;
+	  const intensity = v.length / 1E5;
+
+
+      content += ` ${stepNum} D  0  ${intensity}   --   ${dec}   ${inc}   0   0   0   0   0  C1   0\n`;
     });
 
-    // Optional separator for next specimen
-    content += "\n";
+    const baseName = (specimen.name || specimen.sample || `specimen_${sIndex + 1}`);
+	const safeBase = baseName.replace(/[^a-z0-9_\-]/gi, "_");
+	const exportNameBase = safeBase + "_" + (sIndex + 1);
+
+
+    return content;
   });
-
-  // Create a blob and download
-  const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = "converted_specimens.txt";
-  document.body.appendChild(a);
-  a.click();
-
-  // Clean up
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
 }
 
 function convert_MONTPELLIER() {
@@ -1366,8 +1751,8 @@ function convert_MONTPELLIER() {
 
     steps.forEach(function(step) {
       // Convert Cartesian back to direction + intensity
-      const dir = new Direction().fromCartesian(step.coordinates);
-      const intensity = dir.intensity / 1e6;  // Montpellier stores scaled down
+      const dir = stepToDirection(step);
+      const intensity = dir.length / 1e6;  // Montpellier stores scaled down
 
       content += `${sample} ${step.step} ${intensity} ${dir.dec} ${dir.inc} ${coreAzimuth} ${coreDip} ${beddingStrike} ${beddingDip}\n`;
     });
@@ -1387,79 +1772,134 @@ function convert_MONTPELLIER() {
   URL.revokeObjectURL(url);
 }
 
+
 function convert_GTK() {
   console.log("Export GTK function called.");
-
   if (specimens.length === 0) {
     alert("No specimens to export.");
     return;
   }
 
-  let content = "";
-
-  specimens.forEach(function(specimen) {
+  downloadPerSpecimenText(specimens, ".dat", "_converted_to_gtk", function(specimen) {
+    let content = "";
     const { sample, lithology, latitude, longitude, coreAzimuth, coreDip,
             beddingStrike, beddingDip, volume, steps } = specimen;
 
-    // === HEADER ===
-    content += "Sample file in GTK format\n";  // line 0 (placeholder title)
-    content += `Sample name: ${sample}\n`;     // line 1
-    content += `Lithology: ${lithology || "Unknown"}\n`; // line 2
-    content += "\n\n\n";                       // lines 3-5 padding
-    content += "\n";                           // line 6 padding
-    
-    // metadata line (line 7)
-    // note: importGTK computed coreAzimuth/coreDip differently
-    // reverse the transform here:
-    let gtkCoreAzimuth = (coreAzimuth - 270 + 360) % 360;
-    let gtkCoreDip = 90 - coreDip;
-    let mass = 0; // unknown unless you tracked it in specimens
+    // === HEADER (must match original GTK format exactly) ===
+    // Line 0: instrument/date line
+    content += "SQUID      \n";
+    // Line 1: Name
+    content += `Name      :${sample}\n`;
+    // Line 2: Rocktype
+    content += `Rocktype  :${lithology || "Unknown"}\n`;
+    // Line 3: Site
+    content += "Site      :\n";
+    // Line 4: Sampletype
+    content += "Sampletype:\n";
+    // Line 5: Comment
+    content += "Comment   :\n";
+    // Line 6: Column headers for metadata
+    content += "    Lat     Lon     Str     Dip     Bstr    Bdip   Vol     Mass\n";
 
-    content += `META ${latitude} ${longitude} ${gtkCoreAzimuth} ${gtkCoreDip} ${beddingStrike} ${beddingDip} ${volume} ${mass}\n`;
+    // Line 7: Metadata values — reverse the importer transforms:
+    //   importer: coreAzimuth = (270 + gtkStr) % 360  => gtkStr = (coreAzimuth - 270 + 360) % 360
+    //   importer: coreDip = 90 - gtkDip               => gtkDip = 90 - coreDip
+    // Line 7: Metadata values — guard against null
+    let lat = latitude ?? 0;
+    let lon = longitude ?? 0;
+    let strike = beddingStrike ?? 0;
+    let dip = beddingDip ?? 0;
+    let vol = volume ?? 0;
+    let gtkStr = ((coreAzimuth ?? 0) - 270 + 360) % 360;
+    let gtkDip = 90 - (coreDip ?? 0);
+    let mass = 0;
 
-    // demagnetization line (line 8)
+    content += `${lat.toFixed(2).padStart(7)} ${lon.toFixed(2).padStart(7)} ` +
+              `${gtkStr.toFixed(2).padStart(7)} ${gtkDip.toFixed(2).padStart(7)} ` +
+              `${strike.toFixed(2).padStart(7)} ${dip.toFixed(2).padStart(7)} ` +
+              `${vol.toFixed(3).padStart(6)} ${mass.toFixed(3).padStart(6)}\n`;
+
+    // Line 8: Demagnetization column headers
     let demag = specimen.demagnetizationType === "alternating" ? "AF" : "TH";
-    content += demag + " demagnetization data\n";
+    content += `${demag}      Dec    Inc       Int       Sus    T63       Xkomp      Ykomp      Zkomp\n`;
 
     // === DATA LINES ===
+    // Column positions the importer reads (JS slice, same as Python):
+    //   step:      [0:4]
+    //   dec:       [6:12]
+    //   inc:       [13:19]
+    //   intensity: [24:30]  (in nA/m, importer multiplies by 1E3 but doesn't use it)
+    //   Xkomp:     [50:57]  -> importer: y = 1E3 * Xkomp
+    //   Ykomp:     [61:68]  -> importer: x = -1E3 * Ykomp
+    //   Zkomp:     [72:79]  -> importer: z = 1E3 * Zkomp
+    //
+    // Reversal:
+    //   Xkomp = y / 1E3
+    //   Ykomp = -x / 1E3
+    //   Zkomp = z / 1E3
+
     steps.forEach(step => {
-      // recover dec/inc from coordinates (after rotation)
-      let dir = step.coordinates.rotateTo(coreAzimuth, coreDip).toVector(Direction);
+      let specimenCoords = stepToCoordinates(step);
 
-      // scale back to nA·m
-      let x = -step.coordinates.x / 1E3;
-      let y = step.coordinates.y / 1E3;
-      let z = step.coordinates.z / 1E3;
+      // Use the canonical COL direction directly
+      let geographicDir = stepToDirection(step);
 
-      let intensity = step.coordinates.length() / 1E3;
+      // GTK specimen-frame components
+      let xkomp = specimenCoords.y / 1E3;
+      let ykomp = -specimenCoords.x / 1E3;
+      let zkomp = specimenCoords.z / 1E3;
 
-      // fixed-width formatting like original GTK
+      let intensity = specimenCoords.length / 1E3;
+
+
+      // Placeholder values for Sus and T63 (not stored in specimen)
+      let sus = 0;
+      let t63 = 0;
+
+      // Fixed-width line matching the importer's slice positions exactly:
+      // [0:4]   step, right-justified
+      // [4:6]   "  " (2 spaces)
+      // [6:12]  dec (6 chars)
+      // [12:13] " " (1 space)
+      // [13:19] inc (6 chars)
+      // [19:24] "     " (5 spaces)
+      // [24:30] intensity (6 chars)
+      // [30:39] sus (9 chars)
+      // [39:46] t63 (7 chars)
+      // [46:50] "    " (4 spaces)
+      // [50:57] Xkomp (7 chars)
+      // [57:61] "    " (4 spaces)
+      // [61:68] Ykomp (7 chars)
+      // [68:72] "    " (4 spaces)
+      // [72:79] Zkomp (7 chars)
+
+      // helper function to format GTK components with 4 decimal places, max 7 chars, right-justified because gtk works with such small values, rounding errors occur very quickly
+      function gtkFormat(value) {
+        return value.toFixed(4).slice(0, 7).padStart(7);
+}
+
       let line =
-        step.step.toString().padEnd(4) +
-        dir.dec.toFixed(1).toString().padStart(6) +
-        dir.inc.toFixed(1).toString().padStart(7) +
-        intensity.toFixed(2).toString().padStart(12) +
-        y.toFixed(2).toString().padStart(8) +
-        x.toFixed(2).toString().padStart(8) +
-        z.toFixed(2).toString().padStart(8);
+        step.step.toString().padStart(4) +              // [0:4]  step
+        "  " +                                           // [4:6]
+        geographicDir.dec.toFixed(2).padStart(6) +                // [6:12] dec
+        " " +                                            // [12]
+        geographicDir.inc.toFixed(2).padStart(6) +                // [13:19] inc
+        "     " +                                        // [19:24]
+        intensity.toFixed(3).padStart(6) +              // [24:30] intensity
+        sus.toFixed(0).padStart(9) +                    // [30:39] sus
+        t63.toFixed(2).padStart(7) +                    // [39:46] t63
+        "    " +                                         // [46:50]
+        gtkFormat(xkomp) +                  // [50:57] Xkomp
+        "    " +                                         // [57:61]
+        gtkFormat(ykomp) +                  // [61:68] Ykomp
+        "    " +                                         // [68:72]
+        gtkFormat(zkomp);                   // [72:79] Zkomp
 
       content += line + "\n";
     });
 
-    content += "\n"; // end specimen block
+    return content;
   });
-
-  // Save as .gtk file
-  const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = "converted_specimens.gtk";
-  document.body.appendChild(a);
-  a.click();
-
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
 }
 
 function convert_UNESP() {
@@ -1481,13 +1921,13 @@ function convert_UNESP() {
     const { sample, volume, coreAzimuth, coreDip, beddingStrike, beddingDip, steps } = specimen;
 
     steps.forEach(function(step) {
-      // Convert back cartesian by dividing by 1E9
+      // importUNESP scales by 1E6*1E3 = 1E9 and then multiplies file values by that.
       const x = step.x / 1e9;
       const y = step.y / 1e9;
       const z = step.z / 1e9;
 
       // Declination & inclination (calculate from coords)
-      const dir = new Direction(new Coordinates(x, y, z));
+      const dir = new Coordinates(x, y, z).toVector(Direction);
 
       // Geographic direction: rotate cartesian to geographic coords
       const gDir = new Coordinates(x, y, z).rotateTo(coreAzimuth, coreDip).toVector(Direction);
@@ -1503,10 +1943,10 @@ function convert_UNESP() {
         beddingDip,           // [8]
         dir.dec,              // [9]
         dir.inc,              // [10]
-        "", "", "", "", "", "", "", "",  // fill unused [11-18]
+        "0", "0", "0", "0", "0", "0", "0", "0",  // fill unused [11-18]
         gDir.dec,             // [19]
         gDir.inc,             // [20]
-        "", "", "", "", "", "", "", "", "", "", "", "", // [21-32]
+        "0", "0", "0", "0", "0", "0", "0", "0", "0", "0", "0", "0", // [21-32]
         volume                // [33]
       ];
 
@@ -1514,12 +1954,14 @@ function convert_UNESP() {
     });
   });
 
-  // Export file
+  // Create a blob and download
   const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = "converted_specimens.unesp.txt";
+  
+  let exportName = specimens[0].originalFile || "converted_specimens.txt";
+  a.download = exportName.replace(/\.[^/.]+$/, "") + "_converted_to_USPMag.txt";
   document.body.appendChild(a);
   a.click();
 
@@ -1583,9 +2025,9 @@ function convert_APPLICATIONSAVEOLD() {
     const data = specimen.steps.map(function(step) {
       return {
         step: step.step,
-        x: step.coordinates.x,
-        y: step.coordinates.y,
-        z: step.coordinates.z,
+        x: step.x,
+        y: step.y,
+        z: step.z,
         a95: step.error || 0
       };
     });
@@ -1627,15 +2069,14 @@ function convert_APPLICATIONSAVEOLD() {
   const content = JSON.stringify(exportArray, null, 2);
 
   // Create a blob and download
-  const blob = new Blob([content], { type: "application/json;charset=utf-8" });
+  const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = "converted_specimens.json";
+  let exportName = specimens[0].originalFile || "converted_specimens.json";
+  a.download = exportName.replace(/\.[^/.]+$/, "") + "_converted_to_PMAGORG.pmag";
   document.body.appendChild(a);
   a.click();
-
-  // Clean up
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
 }
@@ -1667,19 +2108,16 @@ async function convert_APPLICATIONSAVE() {
   const content = JSON.stringify(saveObject, null, 2);
 
   // Create a blob and download
-  const blob = new Blob([content], { type: "application/json;charset=utf-8" });
+  const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = "application_save.json";
+  let exportName = specimens[0].originalFile || "converted_specimens.json";
+  a.download = exportName.replace(/\.[^/.]+$/, "") + "_converted_to_col.json";
   document.body.appendChild(a);
   a.click();
-
-  // Clean up
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
 }
-
-
 
 console.log("converting done")

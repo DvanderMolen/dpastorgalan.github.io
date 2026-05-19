@@ -108,6 +108,7 @@
                         <option value="importMunich">University of Munich</option>
                         <option value="importRennes">University of Rennes</option>
                         <option value="importUtrecht">University of Utrecht</option>
+                        <option value="SOUTHAMPTON">University of Southampton</option>
                      </optgroup>
                      <optgroup label="Software Formats">
                         <option value="importMagic">MagIC</option>
@@ -124,7 +125,7 @@
 
 
           <div class="custom-file">
-            <input type="file" class="custom-file-input" id="customFile" accept=".th,.af,.TH,.AF">
+            <input type="file" class="custom-file-input" id="customFile" accept=".th,.af,.TH,.AF" multiple>
             <label class="custom-file-label" for="customFile">
               <i class="fas fa-search"></i> Select files
             </label>
@@ -154,7 +155,7 @@
                         <option value="convert_UNKNOWN">Black Mountain Lab (.dms)</option>
                         <option value="convert_CALTECH">Caltech Institute of Technology</option>
                         <option value="convert_CENIEH">Cenieh Core</option>
-                        <option value="convert_CENIEHREG">Cenieh Regular</option>
+                        <option value="convert_CENIEHREGULAR">Cenieh Regular</option>
                         <option value="convert_BCN2G">PGL Beijing</option>
                         <option value="convert_LDGO">University of Plymouth</option>
                         <option value="convert_GTK">Geological Survey of Finland</option>
@@ -169,6 +170,7 @@
                         <option value="convert_OXFORD">University of Oxford</option>
                         <option value="convert_ANGLIA">University of East Anglia</option>
                         <option value="convert_RS3">University of Oslo</option>
+                        <option value="convert_SOUTHAMPTON">University of Southampton</option>
                         <option value="convert_MUNICH">University of Munich</option>
                         <option value="convert_RENNES">University of Rennes</option>
                         <option value="convert_UTRECHT">University of Utrecht</option>
@@ -192,8 +194,8 @@
 
  <div class="input-group-append">
     <div class="input-group-text">
-      <input id="append-input" type="checkbox" checked aria-label="Checkbox for following text input">
-      <label class="form-check-label ms-1" for="append-input">
+      <input id="download-col-input" type="checkbox" checked aria-label="Checkbox for following text input">
+      <label class="form-check-label ms-1" for="download-col-input">
        &nbsp; Also download .col format
       </label>
     </div>
@@ -224,6 +226,8 @@
    <script src="../lib/svg2pdf.min.js"></script>
    <script src="../lib/jspdf.min.js"></script>
    <script src="../lib/l_10646-normal.js"></script>
+   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+
 
    <!-- Highcharts -->
    <script src="../lib/highcharts-7.0.3/code/highcharts.js"></script>
