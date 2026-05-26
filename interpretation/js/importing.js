@@ -312,7 +312,6 @@ function importRennes(file) {
     var volume = lines[3].split(/\s+/)[2];
     var latitude = lines[4].split(/\s+/)[2];
     var longitude = lines[4].split(/\s+/)[5];
-	console.log(lines[9]);
     // Lazily implement AGICO: may defer call to convertAgico but that does not support P1, P3 yet
     if(!lines[9].includes("A12_0_3_9")) {
       throw new Exception("Currently only supporting Agico format 12, 0, 3, 9. The other orientations still need to be implemented for this format.");
@@ -330,9 +329,6 @@ function importRennes(file) {
       var parameters = lines[i].split(/\s+/);
       var step = parameters[1];
       var intensity = Number(parameters[4]) * 1E6;
-	  console.log(parameters[4]);
-	  console.log(parameters[6]);
-	  console.log(parameters[7]);
       var dec = Number(parameters[6]);
       var inc = Number(parameters[7]);
 
@@ -1024,7 +1020,6 @@ function importJR6(file) {
     var P2 = Number(line.slice(68, 71));
     var P3 = Number(line.slice(71, 74));
     var P4 = Number(line.slice(74, 77));
-    console.log(P1, P2, P3, P4);
     // Convert AGICO orientations
     orientations = convertAgico(P1, P2, P3, P4, coreAzimuth, coreDip, beddingStrike, beddingDip);
 
@@ -1159,7 +1154,6 @@ function importRS3(file) {
   var steps = lines.slice(2).map(function(line) {
 
     var step = line.slice(3, 6).trim();
-	console.log(step)
     // Intensity is in A/m
     var intensity = 1E6 * Number(line.slice(15, 27));
     var declination = Number(line.slice(28, 33));
@@ -1395,7 +1389,6 @@ function importSouthampton(file) {
     return new Measurement(parameters[stepIndex], coordinates, null);
 
   });
-console.log(steps)
   specimens.push({
     "demagnetizationType": demagnetizationType,
     "coordinates": "specimen",
@@ -2242,7 +2235,6 @@ function importUtrecht(file) {
       steps.push(new Measurement(step, coordinates, error));
 
     });
-	console.log(steps)
     specimens.push({
       "demagnetizationType": demagnetizationType,
       "coordinates": "specimen",
@@ -2414,4 +2406,3 @@ function importHelsinkiBlock(file) {
   });
 
 }
-console.log(LINE_REGEXP)

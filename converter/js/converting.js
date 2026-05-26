@@ -100,13 +100,11 @@ function sha256Hex(message) {
 }
 
 function convert_UTRECHT() {
-  console.log("Export Utrecht function called.");
 
   if (specimens.length === 0) {
     alert("No specimens to export.");
     return;
   }
-  console.log(specimens)
   let content = "";
   content += "\n"; // top header
   specimens.forEach(function(specimen) {
@@ -123,7 +121,6 @@ function convert_UTRECHT() {
     });
     
     content += "9999\n";
-	console.log(coreAzimuth,coreDip,beddingStrike,beddingDip)
   });
 
   content += '"END"\n';
@@ -145,7 +142,6 @@ function convert_UTRECHT() {
 }
 
 function convert_HELSINKI() {
-  console.log("Export Helsinki function called.");
   console.warn(
     "Helsinki format does not store orientation metadata. " +
     "bedding orientations will be lost."
@@ -198,7 +194,6 @@ function convert_HELSINKI() {
 }
 
 function convert_HELSINKIBLOCK() {
-  console.log("Export Helsinki Block function called.");
 
   if (specimens.length === 0) {
     alert("No specimens to export.");
@@ -269,7 +264,6 @@ function convertAgicoInverse(coreAzimuth, coreDip, beddingStrike, beddingDip) {
 }
 
 function convert_RS3() {
-  console.log("Export RS3 function called.");
 
   if (!Array.isArray(specimens) || specimens.length === 0) {
     alert("No specimens to export.");
@@ -420,7 +414,6 @@ function convert_RS3() {
 }
 
 function convert_CALTECH() {
-  console.log("Export Caltech function called.");
 
   if (specimens.length === 0) {
     alert("No specimens to export.");
@@ -499,7 +492,6 @@ function convert_CALTECH() {
 }
 
 function convert_LDGO() {
-  console.log("Export LDGO function called.");
 
   if (specimens.length === 0) {
     alert("No specimens to export.");
@@ -544,7 +536,6 @@ function convert_LDGO() {
 }
 
 function convert_BCN2G() {
-  console.log("Export BCN2G function called wawoop.");
 
   if (specimens.length === 0) {
     alert("No specimens to export.");
@@ -586,7 +577,6 @@ function convert_BCN2G() {
 }
 
 function convert_MUNICH() {
-  console.log("Export Munich function called.");
 
   if (specimens.length === 0) {
     alert("No specimens to export.");
@@ -617,7 +607,6 @@ function convert_MUNICH() {
 }
 
 function convert_CENIEHREGULAR() {
-  console.log("Export Cenieh Regular function called.");
 
   if (specimens.length === 0) {
     alert("No specimens to export.");
@@ -671,7 +660,6 @@ function convert_CENIEHREGULAR() {
 }
 
 function convert_CENIEH() {
-  console.log("Export Cenieh function called.");
 
   if (specimens.length === 0) {
     alert("No specimens to export.");
@@ -708,7 +696,6 @@ function convert_CENIEH() {
 }
 
 function convert_NGU() {
-  console.log("Export NGU function called.");
 
   if (specimens.length === 0) {
     alert("No specimens to export.");
@@ -747,7 +734,6 @@ function convert_NGU() {
 }
 
 function convert_ANGLIA() {
-  console.log("Export Anglia function called.");
 
   if (specimens.length === 0) {
     alert("No specimens to export.");
@@ -782,7 +768,6 @@ function convert_ANGLIA() {
 }
 
 function convert_OXFORD() {
-  console.log("Export Oxford function called.");
 
   if (specimens.length === 0) {
     alert("No specimens to export.");
@@ -830,8 +815,6 @@ function convert_OXFORD() {
 }
 
 function convert_SOUTHAMPTON() {
-
-  console.log("Export Southampton function called.");
 
   if (!Array.isArray(specimens) || specimens.length === 0) {
     alert("No specimens to export.");
@@ -914,7 +897,6 @@ function convert_SOUTHAMPTON() {
 }
 
 function convert_PALEOMAC() {
-  console.log("Export PaleoMac function called.");
   if (specimens.length === 0) {
     alert("No specimens to export.");
     return;
@@ -1010,7 +992,6 @@ function convert_PALEOMAC() {
 }
 
 function convert_JR6() {
-  console.log("Export JR6 function called.");
 
   if (specimens.length === 0) {
     alert("No specimens to export.");
@@ -1087,7 +1068,6 @@ function convert_JR6() {
 }
 
 function convert_JR5() {
-  console.log("Export JR5 function called.");
 
   if (specimens.length === 0) {
     alert("No specimens to export.");
@@ -1142,7 +1122,6 @@ function convert_JR5() {
 }
 
 function convert_BLACKMOUNTAIN() {
-  console.log("Export Black Mountain function called.");
 
   if (specimens.length === 0) {
     alert("No specimens to export.");
@@ -1202,7 +1181,6 @@ function convert_BLACKMOUNTAIN() {
 }
 
 function convert_UNKNOWN() {
-  console.log("Export Unknown function called.");
 
   if (specimens.length === 0) {
     alert("No specimens to export.");
@@ -1250,8 +1228,6 @@ function convert_UNKNOWN() {
 }
 
 function convert_PALEOMAG() {
-
-  console.log("Export PaleoMag function called.");
 
   if (specimens.length === 0) {
     alert("No specimens to export.");
@@ -1366,8 +1342,6 @@ function convert_PALEOMAG() {
   );
 }
 function convert_MAGIC() {
-
-  console.log("Export MagIC function called.");
 
   if(specimens.length === 0) {
     alert("No specimens to export.");
@@ -1656,7 +1630,6 @@ function convert_MAGIC() {
 }
 
 function convert_RENNES() {
-  console.log("Export Rennes function called with zip.");
 
   if (!Array.isArray(specimens) || specimens.length === 0) {
     alert("No specimens to export.");
@@ -1737,7 +1710,6 @@ function convert_RENNES() {
 }
 
 function convert_MONTPELLIER() {
-  console.log("Export Montpellier function called.");
 
   if (specimens.length === 0) {
     alert("No specimens to export.");
@@ -1774,7 +1746,6 @@ function convert_MONTPELLIER() {
 
 
 function convert_GTK() {
-  console.log("Export GTK function called.");
   if (specimens.length === 0) {
     alert("No specimens to export.");
     return;
@@ -1903,7 +1874,6 @@ function convert_GTK() {
 }
 
 function convert_UNESP() {
-  console.log("Export UNESP function called.");
 
   if (specimens.length === 0) {
     alert("No specimens to export.");
@@ -1971,7 +1941,6 @@ function convert_UNESP() {
 }
 
 function convert_SPINNER() {
-  console.log("Export Spinner function called.");
 
   if (specimens.length === 0) {
     alert("No specimens to export.");
@@ -2013,7 +1982,6 @@ function convert_SPINNER() {
 }
 
 function convert_APPLICATIONSAVEOLD() {
-  console.log("Export ApplicationSaveOld function called.");
 
   if (specimens.length === 0) {
     alert("No specimens to export.");
@@ -2082,7 +2050,6 @@ function convert_APPLICATIONSAVEOLD() {
 }
 
 async function convert_APPLICATIONSAVE() {
-  console.log("Export Application Save function called.");
 
   if (specimens.length === 0) {
     alert("No specimens to export.");
@@ -2120,4 +2087,3 @@ async function convert_APPLICATIONSAVE() {
   URL.revokeObjectURL(url);
 }
 
-console.log("converting done")

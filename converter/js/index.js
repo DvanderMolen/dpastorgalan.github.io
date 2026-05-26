@@ -56,10 +56,7 @@ function registerEventHandlers() {
 
   // Initialize controlled vocab
   addLithologyOptions();
-    console.log("litho options added")
   addGeologicalClassOptions();
-  console.log("classoptions added")
-console.log("registerEventHandlers finished");
 }
 
 var Measurement = function(step, coordinates, error) {
@@ -947,7 +944,6 @@ function updateSpecimenSelect(index) {
   document.getElementById("specimen-select").selectedIndex = index || 0;
   stepSelector.reset();
   saveLocalStorage();
-console.log("registerEventHandlers finished")
 }
 
 function removeOptions(selectbox) {
@@ -989,7 +985,6 @@ function addLithologyOptions() {
    */
 
   HTTPRequest("../db/lithologies.json", "GET", function(lithologies) { 
-  console.log(lithologies)
 	addOptions(lithologies, "specimen-lithology-input");
   });
 
@@ -1001,7 +996,6 @@ function addOptions(options, element) {
    * Function addOptions
    * Adds a list of options to a specific option element
    */
-console.log(document)
   options.forEach(function(x) {
 
     var option = document.createElement("option");
@@ -1396,7 +1390,6 @@ function persistFork() {
 }
 
 function __unlock__(json) {
-console.log("unlock called")
   /*
    * Function __unlock__
    * Application has initialized and handlers can be registered
@@ -1424,15 +1417,10 @@ console.log("unlock called")
   }
 
   specimens = json;
-console.log("specimens filled called")
   registerEventHandlers();
-  console.log("register evenhandled in unlock finished")
   updateSpecimenSelect();
-  console.log("update specimenselector in unlock finished")
-  //stepSelector.reset();
 
-  //addMap();
-  console.log("unlock finished")
+
 } 
 
 // Some globals
@@ -2349,7 +2337,6 @@ function __init__() {
    * Function __init__
    * Initializes the Paleomagnetism 2.0.0 interpretation portal
    */
-console.log("init called");
   // Check local storage
   if(!window.localStorage) {
     return notify("warning", "Local storage is not supported by your browser. Save your work manually by exporting your data.");
@@ -2370,9 +2357,6 @@ console.log("init called");
 
 }
 
-// Components
-//var stepSelector = new StepSelector();
-console.log("index innit called");
+
 __init__();
 
-console.log("all done in a jiffy");

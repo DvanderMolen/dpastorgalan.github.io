@@ -1182,7 +1182,6 @@ function importRS3(file) {
   // Bedding parameters
   var beddingStrike = Number(header.slice(86, 90).trim());
   var beddingDip = Number(header.slice(92, 95).trim());
-  console.log(coreAzimuth,coreDip,beddingStrike,beddingDip)
   var orientations = convertAgico(P1, P2, P3, P4, coreAzimuth, coreDip, beddingStrike, beddingDip);
 
   // Go over each demagnetization step
@@ -1195,7 +1194,6 @@ function importRS3(file) {
     var declination = Number(line.slice(28, 33));
     var inclination = Number(line.slice(34, 39));
     var a95 = Number(line.slice(77, 80))
-	  console.log(a95)
     var coordinates = new Direction(declination, inclination, intensity).toCartesian();
 
     return new Measurement(step, coordinates, a95);
@@ -2424,7 +2422,6 @@ function importSouthampton(file) {
     return new Measurement(parameters[stepIndex], coordinates, null);
 
   });
-console.log(steps)
   specimens.push({
     "demagnetizationType": demagnetizationType,
     "coordinates": "specimen",
@@ -2461,7 +2458,6 @@ document.addEventListener("DOMContentLoaded", () => {
   const alsoColInput = document.getElementById("download-col-input");
 
   convertBtn.addEventListener("click", async () => {
-    console.log("Convert button clicked");
 
     const files = Array.from(fileInput.files || []);
     if (files.length === 0) {
@@ -2475,7 +2471,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const inputFormatValue = inputFormat.value;
     if (typeof window[inputFormatValue] === "function") {
-	  console.log(inputFormatValue);
       for (const file of files) {
         const text = await file.text();
         window[inputFormatValue]({ name: file.name, data: text });
@@ -2488,7 +2483,6 @@ document.addEventListener("DOMContentLoaded", () => {
     // Export depending on output format
     const selected = outputFormat.value;
     if (typeof window[selected] === "function") {
-      console.log(selected);
 	  await window[selected]();  // e.g. convert_UTRECHT()
       if (alsoColInput && alsoColInput.checked && selected !== "convert_APPLICATIONSAVE") {
         await convert_APPLICATIONSAVE();
@@ -2499,4 +2493,3 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   });
 });
-console.log("importing done");
