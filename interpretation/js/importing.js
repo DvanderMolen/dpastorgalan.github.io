@@ -2464,3 +2464,167 @@ function importXian(file) {
   });
 
 }
+
+function importCryoThing(sitFile, meaFile) {
+  /*
+   * Function importCryoThing
+   * Imports CryoMag / CryoThing format.
+   *
+   * Requires two files:
+   *   sitFile  - the .sit file (specimen metadata: orientation, volume, bedding, etc.)
+   *   meaFile  - the .mea file (measurements, linked to .sit by specimen index number)
+   *
+   * .sit column layout (fixed-width / whitespace-delimited):
+   *   specimenName  index  coreAzimuth  coreDip(hade)  beddingTrend  beddingPlunge  volume  mass  level  magnetismType  susceptibility  comment
+   *
+   * Note: coreDip in the .sit is stored as *hade* (90° - dip from vertical),
+   * so we convert: coreDip = 90 - hade.
+   *
+   * .mea column layout (whitespace-delimited):
+   *   index  step  unit  x  y  z  stdX  stdY  stdZ  nMeas  [orientation]  comment  date  time  user(last col)
+   *
+   * Moments (x, y, z) are in Am² (typically ~1e-9 to 1e-8).
+   * We convert to µA/m by dividing by volume (in cm³ = volume * 1e-6 m³):
+   *   intensity [µA/m] = moment [Am²] / volume [m³] * 1e6
+   *   => intensity = moment / (volume_cm3 * 1e-6) * 1e6 = moment / volume_cm3
+   *
+   * Coordinate mapping from CryoMag (instrument) to internal Cartesian:
+   *   The CryoMag X axis points along the specimen axis (into the magnetometer),
+   *   Y is horizontal, Z is up. Following the Utrecht convention used elsewhere:
+   *   internal x = -y_cryo, internal y = z_cryo, internal z = -x_cryo
+   */
+
+  // ── Parse .sit file ──────────────────────────────────────────────────────────
+  var sitSpecimens = {};
+
+  sitFile.data.split(/\r?\n/).forEach(function(line) {
+    line = line.trim();
+    if(!line) return;
+
+    // Columns are whitespace-delimited; specimen name may contain hyphens but no spaces.
+    var parts = line.split(/\s+/);
+    if(parts.length < 6) return;
+
+    var specimenName  = parts[0];
+    var index         = parseInt(parts[1]);
+    var coreAzimuth   = Number(parts[2]);
+    var hade          = Number(parts[3]);   // hade = 90 - dip
+    var coreDip       = 90 - hade;
+    var beddingTrend  = Number(parts[4]);   // trend of down-dip vector
+    var beddingPlunge = Number(parts[5]);   // plunge of down-dip vector
+    // beddingStrike = trend of down-dip - 90 (right-hand rule)
+    var beddingStrike = beddingTrend - 90;
+    var beddingDip    = beddingPlunge;
+    var volume        = Number(parts[6]) || 10.0;  // cm³; default 10 cc
+    // parts[7] = mass, parts[8] = level, parts[9] = magnetism type
+    var level         = Number(parts[8]) || null;
+    if(isNaN(level)) level = null;
+
+    if(isNaN(index)) return;
+
+    sitSpecimens[index] = {
+      "demagnetizationType": null,
+      "coordinates": "specimen",
+      "format": "CRYOTHING",
+      "version": __VERSION__,
+      "created": new Date().toISOString(),
+      "steps": [],
+      "level": level,
+      "longitude": null,
+      "latitude": null,
+      "age": null,
+      "ageMin": null,
+      "ageMax": null,
+      "lithology": null,
+      "sample": specimenName,
+      "name": specimenName,
+      "volume": volume,                   // cm³
+      "beddingStrike": beddingStrike,
+      "beddingDip": beddingDip,
+      "coreAzimuth": coreAzimuth,
+      "coreDip": coreDip,
+      "interpretations": []
+    };
+  });
+
+  // ── Parse .mea file ──────────────────────────────────────────────────────────
+  meaFile.data.split(/\r?\n/).forEach(function(line) {
+    line = line.trim();
+    if(!line) return;
+
+    var parts = line.split(/\s+/);
+    // Minimum: index, step, unit, x, y, z  (6 fields; unit may be empty col)
+    if(parts.length < 6) return;
+
+    var index = parseInt(parts[0]);
+    if(isNaN(index) || !sitSpecimens.hasOwnProperty(index)) return;
+
+    var specimen = sitSpecimens[index];
+
+    var stepRaw = parts[1];  // e.g. "NRM", "2.5", "10", "100"
+    var unit    = parts[2];  // "mT", "C", or "" (blank for NRM with no applied field)
+
+    // Determine demagnetization type from unit
+    var demagnetizationType;
+    if(stepRaw === "NRM") {
+      // NRM step: keep whatever type was already set, or leave null for now
+      // It will be inferred from the subsequent demag steps
+      demagnetizationType = specimen.demagnetizationType;
+    } else if(unit === "mT") {
+      demagnetizationType = "alternating";
+    } else if(unit === "C") {
+      demagnetizationType = "thermal";
+    } else {
+      demagnetizationType = null;
+    }
+
+    if(demagnetizationType !== null) {
+      specimen.demagnetizationType = demagnetizationType;
+    }
+
+    // Parse step value: NRM → 0
+    var step = (stepRaw === "NRM") ? 0 : Number(stepRaw);
+    if(isNaN(step)) return;
+
+    // Moments in Am²
+    var xRaw = Number(parts[3]);
+    var yRaw = Number(parts[4]);
+    var zRaw = Number(parts[5]);
+    if(isNaN(xRaw) || isNaN(yRaw) || isNaN(zRaw)) return;
+
+    // Convert Am² → µA/m using volume in cm³
+    // moment [Am²] / (volume [cm³] × 1e-6 [m³/cm³]) × 1e6 [µA/m per A/m] = moment / volume_cm3
+    var volumeM3 = specimen.volume * 1e-6;
+    var factor   = 1e6 / volumeM3;
+
+    var xInt = xRaw * factor;
+    var yInt = yRaw * factor;
+    var zInt = zRaw * factor;
+
+    // Coordinate mapping: CryoMag → internal
+    // (matching the Utrecht convention used in importUtrecht)
+    var x = -yInt;
+    var y =  zInt;
+    var z = -xInt;
+
+    specimen.steps.push({
+      step: step.toString(),
+      x: x,
+      y: y,
+      z: z,
+      error: null,
+      visible: true,
+      selected: false
+    });
+  });
+
+  // ── Fallback demagnetization type ────────────────────────────────────────────
+  // If a specimen only has an NRM step, we cannot infer type; leave as null.
+  // If type was set by any non-NRM step, it propagates to all steps of that specimen.
+
+  // ── Push specimens with steps into the application ───────────────────────────
+  Object.values(sitSpecimens).forEach(function(specimen) {
+    if(specimen.steps.length === 0) return;
+    specimens.push(specimen);
+  });
+}

@@ -1981,6 +1981,90 @@ function convert_SPINNER() {
   URL.revokeObjectURL(url);
 }
 
+function convert_CRYOTHING() {
+  if (specimens.length === 0) {
+    alert("No specimens to export.");
+    return;
+  }
+
+  let sitContent = "";
+  let meaContent = "";
+
+  specimens.forEach(function(specimen, i) {
+    const {
+      sample, volume, coreAzimuth, coreDip,
+      beddingStrike, beddingDip, level, steps
+    } = specimen;
+
+    const index     = i + 1;
+    const hade      = 90 - coreDip;
+    const bedTrend  = beddingStrike + 90;  // reverse of import: strike+90 = down-dip trend
+    const bedPlunge = beddingDip;
+    const lvl       = (level !== null && level !== undefined) ? level : 0.0;
+
+    // .sit line
+    sitContent += `${sample.padEnd(20)} ${String(index).padEnd(3)} ` +
+      `${coreAzimuth.toFixed(1).padStart(6)}  ${hade.toFixed(1).padStart(4)}  ` +
+      `${bedTrend.toFixed(1).padStart(5)}  ${bedPlunge.toFixed(1).padStart(4)}  ` +
+      `${volume.toFixed(1).padStart(4)}  0.0  ${lvl.toFixed(2).padStart(4)}  ` +
+      `0   0.0000E+00 None                   0 \r\n`;
+
+    // .mea lines — invert the coordinate mapping from importCryoThing:
+    //   internal: x = -y_cryo, y = z_cryo, z = -x_cryo
+    //   inverse:  x_cryo = -z_int, y_cryo = -x_int, z_cryo = y_int
+    const volumeM3 = volume * 1e-6;
+    const unit = specimen.demagnetizationType === "thermal" ? "C " : "mT";
+
+    steps.forEach(function(step) {
+      const xCryo = -step.z / (1e6 / volumeM3);
+      const yCryo = -step.x / (1e6 / volumeM3);
+      const zCryo =  step.y / (1e6 / volumeM3);
+
+      const isNRM = (step.step === "0" || step.step === 0);
+      const stepLabel = isNRM ? "NRM  " : String(step.step).padEnd(5);
+      // Always write the unit token, even for NRM — keeps column positions consistent
+      const stepUnit  = unit;
+
+      meaContent += `${String(index).padEnd(3)} ${stepLabel} ${stepUnit} ` +
+        `${xCryo.toExponential(3).padStart(13)} ` +
+        `${yCryo.toExponential(3).padStart(13)} ` +
+        `${zCryo.toExponential(3).padStart(13)} ` +
+        `+0.000E+00 +0.000E+00 +0.000E+00 ` +
+        `8     exported  ` +
+        `${new Date().toLocaleDateString("en-GB", {day:"2-digit", month:"2-digit", year:"2-digit"}).replace(/\//g, "-")} ` +
+        `00:00    0\r\n`;
+    });
+  });
+
+  const baseName = (specimens[0].originalFile || "exported_specimens")
+    .replace(/\.[^/.]+$/, "")
+    .replace(/_converted_to_\w+$/, "");
+
+  // Download .sit
+  const sitBlob = new Blob([sitContent], { type: "text/plain;charset=utf-8" });
+  const sitUrl  = URL.createObjectURL(sitBlob);
+  const sitA    = document.createElement("a");
+  sitA.href     = sitUrl;
+  sitA.download = baseName + "_converted_to_cryothing.sit";
+  document.body.appendChild(sitA);
+  sitA.click();
+  document.body.removeChild(sitA);
+  URL.revokeObjectURL(sitUrl);
+
+  // Download .mea (slight delay so both downloads trigger)
+  setTimeout(function() {
+    const meaBlob = new Blob([meaContent], { type: "text/plain;charset=utf-8" });
+    const meaUrl  = URL.createObjectURL(meaBlob);
+    const meaA    = document.createElement("a");
+    meaA.href     = meaUrl;
+    meaA.download = baseName + "_converted_to_cryothing.mea";
+    document.body.appendChild(meaA);
+    meaA.click();
+    document.body.removeChild(meaA);
+    URL.revokeObjectURL(meaUrl);
+  }, 100);
+}
+
 function convert_APPLICATIONSAVEOLD() {
 
   if (specimens.length === 0) {

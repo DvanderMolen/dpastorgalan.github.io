@@ -83,6 +83,31 @@ var Measurement = function(step, coordinates, error) {
 
 }
 
+function handleCryoThingImport(files) {
+
+  /*
+   * Function handleCryoThingImport
+   * Handles importing CryoThing format files which require paired .sit and .mea files
+   */
+
+  const sitFiles = files.filter(file => file.name.toLowerCase().endsWith('.sit'));
+  const meaFiles = files.filter(file => file.name.toLowerCase().endsWith('.mea'));
+
+  // Match .sit and .mea files by base name
+  sitFiles.forEach(sitFile => {
+    const baseName = sitFile.name.replace(/\.sit$/i, '');
+    const matchingMeaFile = meaFiles.find(meaFile => 
+      meaFile.name.replace(/\.mea$/i, '') === baseName
+    );
+    
+    if (matchingMeaFile) {
+      importCryoThing(sitFile, matchingMeaFile);
+    } else {
+      console.warn(`No matching .mea file found for ${sitFile.name}`);
+    }
+  });
+
+}
 
 function addDegmagnetizationFiles(format, files) {
 
@@ -150,6 +175,8 @@ function addDegmagnetizationFiles(format, files) {
       return files.forEach(importJR6);
     case "CJONES":
       return files.forEach(importPaleoMag);
+    case "CRYOTHING":
+      return files.forEach(importCryoThing);
     default:
       throw(new Exception("Unknown importing format requested."));
   }
