@@ -1950,58 +1950,52 @@ function importLDGO(file) {
 }
 
 function importCaltech(file) {
+  // normalize \r-only (old Mac) and \r\n (Windows) line endings to \n
+  var normalized = file.data.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  var lines = normalized.split(LINE_REGEXP).filter(Boolean);
 
-  /*
-   * Function importCaltech
-   * Parses for Caltech Institute of Technology format
-   */
-
-  var lines = file.data.split(LINE_REGEXP).filter(Boolean);
-
-  // Sample name is specified at the top
   var sampleName = lines[0].trim();
-
-  // First line has the core & bedding parameters
   var coreParameters = lines[1].split(/\s+/).filter(Boolean);
+
+  // OLVP has an extra leading token (e.g. "0") before the 5 core params.
+  // If we get 6 tokens instead of 5, shift the array by 1 before reading.
+  var paramOffset = coreParameters.length >= 6 ? 1 : 0;
+
   var coreAzimuth = (Number(lines[1].slice(8, 13).trim()) + 270) % 360;
   var coreDip = 90 - Number(lines[1].slice(14, 19).trim());
   var beddingStrike = Number(lines[1].slice(20, 25).trim());
   var beddingDip = Number(lines[1].slice(26, 32).trim());
   var sampleVolume = Number(lines[1].slice(33, 38).trim());
 
-  // Hacky fix: if parameters are not in the expected positions split by space and use that instead
-  // Reported by Wentao Huang
   if(isNaN(coreAzimuth) || isNaN(coreDip) || isNaN(beddingStrike) || isNaN(beddingDip) || isNaN(sampleVolume)) {
-    coreAzimuth = (Number(coreParameters[0].trim()) + 270) % 360;
-    coreDip = 90 - Number(coreParameters[1].trim());
-    beddingStrike = Number(coreParameters[2].trim());
-    beddingDip = Number(coreParameters[3].trim());
-    sampleVolume = Number(coreParameters[4].trim());
+    coreAzimuth = (Number(coreParameters[0 + paramOffset].trim()) + 270) % 360;
+    coreDip = 90 - Number(coreParameters[1 + paramOffset].trim());
+    beddingStrike = Number(coreParameters[2 + paramOffset].trim());
+    beddingDip = Number(coreParameters[3 + paramOffset].trim());
+    sampleVolume = Number(coreParameters[4 + paramOffset].trim());
   }
- 
+
   var line;
   var steps = new Array();
-
   for(var i = 2; i < lines.length; i++) {
-
     line = lines[i];
-
     var stepType = line.slice(0, 2);
-    var step = line.slice(0, 6).trim() || "0";
+
+    // Normalise "NRM" label to "0" so it is treated as the NRM step,
+    // consistent with how Caltech files encode it (blank → "0").
+    var stepRaw = line.slice(0, 6).trim();
+    var step = (stepRaw === "" || stepRaw === "NRM") ? "0" : stepRaw;
+
     var dec = Number(line.slice(46, 51));
     var inc = Number(line.slice(52, 57));
-
-    // Intensity in emu/cm3 -> convert to micro A/m (1E9)
     var intensity = 1E9 * Number(line.slice(31, 39));
     var a95 = Number(line.slice(40, 45));
     var info = line.slice(85, 113).trim();
-
     let GDec = Number(line.slice(7, 12).trim());
     let GInc = Number(line.slice(13, 18).trim());
-
     var coordinates = new Direction(dec, inc, intensity).toCartesian();
     var GDirection = coordinates.rotateTo(coreAzimuth, coreDip).toVector(Direction);
-	
+
     if(Math.abs(GDec - GDirection.dec) > 1 || Math.abs(GInc - GDirection.inc) > 1) {
       setTimeout(function() {
         notify("warning", "Inconsistency detected in geographic vector component. Check results carefully!")
@@ -2011,16 +2005,14 @@ function importCaltech(file) {
     var TDec = Number(line.slice(19, 24).trim());
     var TInc = Number(line.slice(25, 30).trim());
     var TDirection = coordinates.rotateTo(coreAzimuth, coreDip).correctBedding(beddingStrike, beddingDip).toVector(Direction);
-
-    // Check and verify tectonic coordinates
     if(Math.abs(TDec - TDirection.dec) > 1 || Math.abs(TInc - TDirection.inc) > 1) {
       setTimeout(function() {
         notify("warning", "Inconsistency detected in tectonic vector component. Check results carefully!")
       }, 0);
     }
 
+    // Accept "TT" (thermal) step type in addition to "AF".
     steps.push(new Measurement(step, coordinates, a95));
-
   }
 
   specimens.push({
@@ -2046,8 +2038,6 @@ function importCaltech(file) {
     "coreDip": Number(coreDip),
     "interpretations": new Array()
   });
-
-
 }
 
 function importApplicationSaveOld(file) {
