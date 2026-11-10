@@ -537,7 +537,7 @@ function importMagic(file) {
             "lithology": null,
             "name": object.specimen,
             "volume": 1E6 * volume,
-            "beddingStrike": Number(sample["bed_dip_direction"]) - 90 || 0,
+            "beddingStrike": roundToPrecisionOf(Number(sample["bed_dip_direction"]) - 90, sample["bed_dip_direction"]) || 0,
             "beddingDip": Number(sample["bed_dip"]) || 0,
             "coreAzimuth": Number(sample["azimuth"]) || 0,
             "coreDip": roundToPrecisionOf(dip + 90, dip),
